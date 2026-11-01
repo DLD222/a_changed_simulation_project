@@ -46,7 +46,7 @@ def fit_delta(zs, amps):
     zs = np.asarray(zs)
     amps = np.asarray(amps)
     _, delta_th = theory(ARGS.sigma, ARGS.lam)
-    mask = zs >= 1.5 * delta_th
+    mask = zs >= getattr(ARGS, 'fit_start', 1.5) * delta_th
     if mask.sum() < 4:
         mask = np.ones_like(zs, dtype=bool)
     coef, res, _rank, _sv, _rc = np.polyfit(zs[mask], np.log(amps[mask]), 1, full=True)
@@ -84,6 +84,8 @@ def main():
     ap.add_argument("--dz", type=float, default=0.03125, help="cell size (1280^2 uses 0.015625)")
     ap.add_argument("--j0", type=int, default=323, help="first probe cell index")
     ap.add_argument("--dj", type=int, default=2, help="probe cell index step")
+    ap.add_argument("--fit-start", type=float, default=1.5,
+                    help="start the ln|E| fit at this many skin depths")
     ap.add_argument("--selftest", action="store_true")
     ARGS = ap.parse_args()
 
@@ -108,7 +110,7 @@ def main():
     for z, a in zip(Z_PROBES, amps):
         print(f"   z={z:7.4f}  |E|={a:.6e}  ln|E|={np.log(a):+.6f}"
               + ("   <- excluded (z < 1.5 delta)" if not mask[Z_PROBES.index(z)] else ""))
-    print(f"slope fit ({mask.sum()} points): delta_meas = {d_meas:.6f} m   "
+    print(f"slope fit ({mask.sum()} points, z >= {ARGS.fit_start} delta): delta_meas = {d_meas:.6f} m   "
           f"rel {rel:+.3%}   resid {resid:.2e}")
     print("PASS" if abs(rel) <= ARGS.tol else "FAIL")
     return 0 if abs(rel) <= ARGS.tol else 1
