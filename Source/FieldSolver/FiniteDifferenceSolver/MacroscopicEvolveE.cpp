@@ -181,6 +181,16 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             m1a = macroscopic_properties->get_sigma_m1_mf().const_array(mfi);
             m2a = macroscopic_properties->get_sigma_m2_mf().const_array(mfi);
         }
+        // Node-centred material data (§4.1): the node holds the ONE value shared by both
+        // grid copies. BE must use it for BOTH the skip test and alpha/beta -- if the
+        // damping still came from the cell interpolation, an interface node would see
+        // ~sigma/2 and the over-damped lock would return in another form.
+        amrex::Array4<amrex::Real const> sn0{}, sn1{}, sn2{};
+        if (has_sig_mat) {
+            sn0 = macroscopic_properties->get_sigma_node_mf(0).const_array(mfi);
+            sn1 = macroscopic_properties->get_sigma_node_mf(1).const_array(mfi);
+            sn2 = macroscopic_properties->get_sigma_node_mf(2).const_array(mfi);
+        }
 
         // Extract stencil coefficients
         Real const * const AMREX_RESTRICT coefs_x = m_stencil_coefs_x.dataPtr();
@@ -211,16 +221,16 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             if (update_Ex_arr && update_Ex_arr(i, j, k) == 0) { return; }
             // sigma > 0 cells are handled by the exponential step below; leaving them
             // untouched here keeps E^n available for the matrix product.
-            if (has_sig_mat && sigma_arr(i, j, k) > amrex::Real(0.0)) { return; }
+            // node sigma drives both the skip and the damping (§4.1)
+            amrex::Real const sigma_node = has_sig_mat ? sn0(i, j, k, 0) : amrex::Real(0.0);
+            if (has_sig_mat && sigma_node > amrex::Real(0.0)) { return; }   // exponential step handles it
 
             // Interpolate conductivity, sigma, to Ex position on the grid
             // sigma-free cells must not inherit damping from a neighbouring conductor
             // through the face interpolation: that made the vacuum side of a sigma
             // interface decay and locked E (and B) to zero inside the conductor
             // (c03-E6, 技术路径 §7.11). With sigma = 0 everywhere this is a no-op.
-            amrex::Real sigma_interp = ablastr::coarsen::sample::Interp(sigma_arr, sigma_stag,
-                                                                 Ex_stag, macro_cr, i, j, k, scomp);
-            if (sigma_arr(i, j, k) <= amrex::Real(0.0)) { sigma_interp = amrex::Real(0.0); }
+            amrex::Real const sigma_interp = sigma_node;   // node sigma, not a cell interpolation
             // Interpolated permittivity, epsilon, to Ex position on the grid
             amrex::Real const epsilon_interp = ablastr::coarsen::sample::Interp(eps_arr, epsilon_stag,
                                                                                 Ex_stag, macro_cr, i, j, k, scomp);
@@ -252,16 +262,16 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             if (update_Ey_arr && update_Ey_arr(i, j, k) == 0) { return; }
             // sigma > 0 cells are handled by the exponential step below; leaving them
             // untouched here keeps E^n available for the matrix product.
-            if (has_sig_mat && sigma_arr(i, j, k) > amrex::Real(0.0)) { return; }
+            // node sigma drives both the skip and the damping (§4.1)
+            amrex::Real const sigma_node = has_sig_mat ? sn1(i, j, k, 0) : amrex::Real(0.0);
+            if (has_sig_mat && sigma_node > amrex::Real(0.0)) { return; }   // exponential step handles it
 
             // Interpolate conductivity, sigma, to Ey position on the grid
             // sigma-free cells must not inherit damping from a neighbouring conductor
             // through the face interpolation: that made the vacuum side of a sigma
             // interface decay and locked E (and B) to zero inside the conductor
             // (c03-E6, 技术路径 §7.11). With sigma = 0 everywhere this is a no-op.
-            amrex::Real sigma_interp = ablastr::coarsen::sample::Interp(sigma_arr, sigma_stag,
-                                                                 Ey_stag, macro_cr, i, j, k, scomp);
-            if (sigma_arr(i, j, k) <= amrex::Real(0.0)) { sigma_interp = amrex::Real(0.0); }
+            amrex::Real const sigma_interp = sigma_node;   // node sigma, not a cell interpolation
             // Interpolated permittivity, epsilon, to Ey position on the grid
             amrex::Real const epsilon_interp = ablastr::coarsen::sample::Interp(eps_arr, epsilon_stag,
                                                                                 Ey_stag, macro_cr, i, j, k, scomp);
@@ -290,16 +300,16 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             if (update_Ez_arr && update_Ez_arr(i, j, k) == 0) { return; }
             // sigma > 0 cells are handled by the exponential step below; leaving them
             // untouched here keeps E^n available for the matrix product.
-            if (has_sig_mat && sigma_arr(i, j, k) > amrex::Real(0.0)) { return; }
+            // node sigma drives both the skip and the damping (§4.1)
+            amrex::Real const sigma_node = has_sig_mat ? sn2(i, j, k, 0) : amrex::Real(0.0);
+            if (has_sig_mat && sigma_node > amrex::Real(0.0)) { return; }   // exponential step handles it
 
             // Interpolate conductivity, sigma, to Ez position on the grid
             // sigma-free cells must not inherit damping from a neighbouring conductor
             // through the face interpolation: that made the vacuum side of a sigma
             // interface decay and locked E (and B) to zero inside the conductor
             // (c03-E6, 技术路径 §7.11). With sigma = 0 everywhere this is a no-op.
-            amrex::Real sigma_interp = ablastr::coarsen::sample::Interp(sigma_arr, sigma_stag,
-                                                                 Ez_stag, macro_cr, i, j, k, scomp);
-            if (sigma_arr(i, j, k) <= amrex::Real(0.0)) { sigma_interp = amrex::Real(0.0); }
+            amrex::Real const sigma_interp = sigma_node;   // node sigma, not a cell interpolation
             // Interpolated permittivity, epsilon, to Ez position on the grid
             amrex::Real const epsilon_interp = ablastr::coarsen::sample::Interp(eps_arr, epsilon_stag,
                                                                                 Ez_stag, macro_cr, i, j, k, scomp);

@@ -17,6 +17,8 @@ warpx.cfl = 0.4
 warpx.use_filter = 0
 algo.maxwell_solver = yee
 algo.em_solver_medium = macroscopic
+algo.particle_shape = 1
+algo.macroscopic_subpixel = 1
 
 # periodic in x, PEC in z (reflection arrives long after the window)
 boundary.field_lo = periodic pec
