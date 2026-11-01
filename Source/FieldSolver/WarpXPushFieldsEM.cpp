@@ -1267,6 +1267,10 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
             amrex::Real const dx = Geom(lev).CellSize(0);
             amrex::Real const dz = Geom(lev).CellSize(AMREX_SPACEDIM-1);
             amrex::Real const dtl = a_dt;
+            // periodic ghost fill, so that ea(i-1)/sa(i-1) at the boundary are the
+            // wrapped values (otherwise the boundary node residual is O(div D), not 0).
+            eps.FillBoundary(Geom(lev).periodicity());
+            sig.FillBoundary(Geom(lev).periodicity());
             // Seed rho_medium(0) = div_h(D(0)) on the very first call, so the test
             // measures drift, not the initial-condition error. lev==0 is asserted above.
             static bool rho_medium_seeded = false;
