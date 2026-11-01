@@ -234,8 +234,8 @@ MacroscopicProperties::AllocateLevelMFs (
     // same grid count and ordering as ba, so mfi.index() stays aligned across them.
     amrex::IntVect const en[3] = {Ex_nodal, Ey_nodal, Ez_nodal};
     for (int c = 0; c < 3; ++c) {
-        m_eps_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 1, ng_props);
-        m_sigma_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 1, ng_props);
+        m_eps_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 6, ng_props);
+        m_sigma_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 6, ng_props);
         m_eps_node[c]->setVal(amrex::Real(0.0));
         m_sigma_node[c]->setVal(amrex::Real(0.0));
     }
@@ -352,30 +352,43 @@ MacroscopicProperties::InitData (
     //   tangential (Ex, Ey): arithmetic mean, sigma = 0 if either side is vacuum
     //   normal     (Ez)    : harmonic mean (D_n continuous, series sigma)
     // Both grid copies of a shared node get the same value, so no owner sync is needed.
+    bool const has_tensor_e = m_has_eps_tensor;
     for (int c = 0; c < 3; ++c) {
         bool const normal = (c == 2);
         for (amrex::MFIter mfi(*m_eps_node[c]); mfi.isValid(); ++mfi) {
             amrex::Box const& b = mfi.validbox();
             auto const ec = m_eps_mf->const_array(mfi);
             auto const sc = m_sigma_mf->const_array(mfi);
+            auto const et = has_tensor_e ? m_eps_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
             auto en = m_eps_node[c]->array(mfi);
             auto sn = m_sigma_node[c]->array(mfi);
             // clamp to the cell-centred valid index range (node boxes are one wider)
             amrex::Box const cbox = m_eps_mf->boxArray()[mfi.index()];
             int const ilo = cbox.smallEnd(0), ihi = cbox.bigEnd(0);
+            int const jlo_dom = geom.Domain().smallEnd(1);
             amrex::ParallelFor(b, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                 int const ii = amrex::min(amrex::max(i, ilo), ihi);
-                int const jm = j - 1;   // may be in the neighbour grid: use the ghost
+                int const jm = amrex::max(j - 1, jlo_dom);   // ghost inside, boundary cell at the domain edge
                 int const jp = j;
                 amrex::Real const eL = ec(ii, jm, k), eR = ec(ii, jp, k);
                 amrex::Real const sL = sc(ii, jm, k), sR = sc(ii, jp, k);
-                if (normal) {
-                    en(i,j,k) = (eL + eR > amrex::Real(0.0)) ? amrex::Real(2.0)*eL*eR/(eL+eR) : amrex::Real(0.0);
-                    sn(i,j,k) = (sL + sR > amrex::Real(0.0)) ? amrex::Real(2.0)*sL*sR/(sL+sR) : amrex::Real(0.0);
+                if (has_tensor_e) {
+                    // node tensor = arithmetic mean of the two cell tensors (O(h) at an
+                    // interface; a tau-average reusing chi_inv_anisotropic is the next step)
+                    for (int q = 0; q < 6; ++q) {
+                        en(i,j,k,q) = amrex::Real(0.5) * (et(ii,jm,k,q) + et(ii,jp,k,q));
+                        sn(i,j,k,q) = amrex::Real(0.0);
+                    }
                 } else {
-                    en(i,j,k) = amrex::Real(0.5) * (eL + eR);
-                    sn(i,j,k) = (sL <= amrex::Real(0.0) || sR <= amrex::Real(0.0))
-                        ? amrex::Real(0.0) : amrex::Real(0.5) * (sL + sR);
+                    amrex::Real const ev = normal
+                        ? ((eL + eR > amrex::Real(0.0)) ? amrex::Real(2.0)*eL*eR/(eL+eR) : amrex::Real(0.0))
+                        : amrex::Real(0.5) * (eL + eR);
+                    amrex::Real const sv = normal
+                        ? ((sL + sR > amrex::Real(0.0)) ? amrex::Real(2.0)*sL*sR/(sL+sR) : amrex::Real(0.0))
+                        : ((sL <= amrex::Real(0.0) || sR <= amrex::Real(0.0))
+                            ? amrex::Real(0.0) : amrex::Real(0.5) * (sL + sR));
+                    for (int q = 0; q < 3; ++q) { en(i,j,k,q) = ev; sn(i,j,k,q) = sv; }
+                    for (int q = 3; q < 6; ++q) { en(i,j,k,q) = amrex::Real(0.0); sn(i,j,k,q) = amrex::Real(0.0); }
                 }
             });
         }
@@ -389,7 +402,7 @@ MacroscopicProperties::InitData (
                     auto const sn = m_sigma_node[c]->const_array(mfi);
                     amrex::Print() << "[NODE] c=" << c << " (320,319..322): ";
                     for (int jj = 319; jj <= 322; ++jj) {
-                        amrex::Print() << " j" << jj << "(e=" << en(320,jj,0) << ",s=" << sn(320,jj,0) << ")";
+                        amrex::Print() << " j" << jj << "(e=" << en(320,jj,0,0) << ",s=" << sn(320,jj,0,0) << ")";
                     }
                     amrex::Print() << "\n";
                 }
