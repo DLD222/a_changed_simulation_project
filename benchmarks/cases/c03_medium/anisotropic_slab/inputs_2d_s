@@ -1,0 +1,54 @@
+# C03-E4: bulk diagonal tensor eps = diag(4,5,6) eps0, no interface.
+# Polarisation s (Ey): the wave sees eps_yy -> v = c/sqrt(eps_yy).
+# Two probes, 3 m apart; the envelope peak transit time gives the group speed.
+max_step = 3000
+stop_time = 60.0e-9
+
+amr.n_cell = 640 640
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -8.0 -8.0
+geometry.prob_hi =  8.0  8.0
+
+warpx.cfl = 0.4
+warpx.use_filter = 0
+algo.maxwell_solver = yee
+algo.em_solver_medium = macroscopic
+boundary.field_lo = periodic pec
+boundary.field_hi = periodic pec
+
+my_constants.eps0 = 8.8541878128e-12
+my_constants.c    = 299792458.0
+my_constants.lam  = 1.0
+my_constants.omega = 2.0*3.141592653589793*c/lam
+my_constants.tau  = 3.2e-9
+my_constants.E0   = 1.0e6
+
+macroscopic.epsilon_tensor_xx = 4.0*eps0
+macroscopic.epsilon_tensor_yy = 5.0*eps0
+macroscopic.epsilon_tensor_zz = 6.0*eps0
+macroscopic.epsilon_tensor_xy = 0.0
+macroscopic.epsilon_tensor_xz = 0.0
+macroscopic.epsilon_tensor_yz = 0.0
+
+lasers.names = laser1
+laser1.position = 0.0 0.0 -3.0
+laser1.direction = 0.0 0.0 1.0
+laser1.polarization = 0.0 1.0 0.0
+laser1.e_max = 1.0
+laser1.wavelength = 1.0
+laser1.profile = parse_field_function
+laser1.field_function(X,Y,t) = "E0*exp(-((t-8.0*tau)/tau)^2)*cos(omega*t)"
+
+warpx.reduced_diags_names = q1 q2
+q1.type = FieldProbe
+q1.intervals = 1
+q1.probe_geometry = Point
+q1.x_probe = 0.0
+q1.z_probe = -1.0
+q2.type = FieldProbe
+q2.intervals = 1
+q2.probe_geometry = Point
+q2.x_probe = 0.0
+q2.z_probe = 2.0

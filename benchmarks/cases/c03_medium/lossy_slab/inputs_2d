@@ -1,0 +1,57 @@
+# C03-S5: lossy plane-wave attenuation in a uniform medium (exponential sigma).
+# Theory: k = omega sqrt(mu eps) sqrt(1 - i sigma/(omega eps));
+#         |E(z+dz)/E(z)| = exp(-|Im k| dz),  phase = -Re(k) dz.
+# Default grid: 640^2, dx = 20/640 = 0.03125 = lambda_med/16 (16 ppw in eps=4eps0).
+# For the 32 ppw acceptance use amr.n_cell = 1280 1280 (same physical domain).
+max_step = 5000
+stop_time = 95.0e-9
+
+amr.n_cell = 640 640
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -10.0 -10.0
+geometry.prob_hi =  10.0  10.0
+
+warpx.cfl = 0.4
+warpx.use_filter = 0
+algo.maxwell_solver = yee
+algo.em_solver_medium = macroscopic
+
+# periodic in x, PEC in z (reflection arrives long after the window)
+boundary.field_lo = periodic pec
+boundary.field_hi = periodic pec
+
+my_constants.eps0 = 8.8541878128e-12
+my_constants.c    = 299792458.0
+my_constants.mu0  = 1.0/(eps0*c*c)
+my_constants.lam  = 1.0
+my_constants.omega = 2.0*3.141592653589793*c/lam
+my_constants.tau  = 3.2e-9                 # fwidth ~5%
+my_constants.E0   = 1.0e6
+
+macroscopic.epsilon = 4.0*eps0
+macroscopic.sigma   = 0.01                 # S/m
+
+# laser source on the z = -5 plane, +z, s-polarisation (Ey)
+lasers.names = laser1
+laser1.position = 0.0 0.0 -5.0
+laser1.direction = 0.0 0.0 1.0
+laser1.polarization = 0.0 1.0 0.0
+laser1.e_max = 1.0
+laser1.wavelength = 1.0
+laser1.profile = parse_field_function
+laser1.field_function(X,Y,t) = "E0*exp(-((t-3.0*tau)/tau)^2)*cos(omega*t)"
+
+# probes at z = -1.0 and z = -0.5 (dz = 0.5 m)
+warpx.reduced_diags_names = q1 q2
+q1.type = FieldProbe
+q1.intervals = 1
+q1.probe_geometry = Point
+q1.x_probe = 0.0
+q1.z_probe = -1.0
+q2.type = FieldProbe
+q2.intervals = 1
+q2.probe_geometry = Point
+q2.x_probe = 0.0
+q2.z_probe = -0.5
