@@ -77,7 +77,18 @@ MacroscopicProperties::ReadParameters ()
         m_epsilon_s = "parse_epsilon_function";
         epsilon_specified = true;
     }
-    if (!epsilon_specified) {
+    // A tensor key also counts as "specified": the scalar `epsilon` is then ignored.
+    // Detecting it here (before the tensor block below) suppresses the misleading
+    // "using default vacuum value" warning in tensor mode.
+    bool tensor_key = false;
+    {
+        char const* tk[12] = {"epsilon_tensor_xx","epsilon_tensor_yy","epsilon_tensor_zz",
+                              "epsilon_tensor_xy","epsilon_tensor_xz","epsilon_tensor_yz",
+                              "epsilon2_tensor_xx","epsilon2_tensor_yy","epsilon2_tensor_zz",
+                              "epsilon2_tensor_xy","epsilon2_tensor_xz","epsilon2_tensor_yz"};
+        for (int i = 0; i < 12; ++i) { tensor_key = tensor_key || pp_macroscopic.contains(tk[i]); }
+    }
+    if (!epsilon_specified && !tensor_key) {
         std::stringstream warnMsg;
         warnMsg << "Material permittivity is not specified. Using default vacuum value of " <<
             m_epsilon << " in the simulation.";
@@ -147,11 +158,9 @@ MacroscopicProperties::ReadParameters ()
                            << " zz=" << v1[2] << " xy=" << v1[3] << " xz=" << v1[4]
                            << " yz=" << v1[5] << "\n";
         }
-        // Material 1 is required for the bulk path; material 2 is only needed when an
-        // interface_function is present (it is checked later, in InitSubpixelRows).
-        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(
-            !key2 || key1,
-            "macroscopic: epsilon2_tensor_* requires epsilon_tensor_*");
+        // Material 1 may be scalar or tensor, independently of material 2. A scalar
+        // eps1 + tensor eps2 (or the reverse) is a legitimate interface configuration;
+        // the Kottke rows and fill_sigma_mats each fall back to diag(eps) per material.
     }
 
 
@@ -459,19 +468,26 @@ MacroscopicProperties::InitSubpixelRows (
                 // diagonal when only eps1 is a tensor.
                 warpx::subpixel::Mat3 E{};
                 amrex::Real const w2 = amrex::Real(1.0) - f1;
-                if (has_tensor_e) {
+                if (has_tensor_e || has_tensor_e2) {
+                    // either material may be scalar (diag) or tensor (6 comps)
+                    amrex::Real const e1_xx = has_tensor_e  ? et1(i,j,k,0) : ea(i,j,k);
+                    amrex::Real const e1_yy = has_tensor_e  ? et1(i,j,k,1) : ea(i,j,k);
+                    amrex::Real const e1_zz = has_tensor_e  ? et1(i,j,k,2) : ea(i,j,k);
+                    amrex::Real const e1_xy = has_tensor_e  ? et1(i,j,k,3) : amrex::Real(0.0);
+                    amrex::Real const e1_xz = has_tensor_e  ? et1(i,j,k,4) : amrex::Real(0.0);
+                    amrex::Real const e1_yz = has_tensor_e  ? et1(i,j,k,5) : amrex::Real(0.0);
                     amrex::Real const e2_xx = has_tensor_e2 ? et2(i,j,k,0) : eps2s;
                     amrex::Real const e2_yy = has_tensor_e2 ? et2(i,j,k,1) : eps2s;
                     amrex::Real const e2_zz = has_tensor_e2 ? et2(i,j,k,2) : eps2s;
                     amrex::Real const e2_xy = has_tensor_e2 ? et2(i,j,k,3) : amrex::Real(0.0);
                     amrex::Real const e2_xz = has_tensor_e2 ? et2(i,j,k,4) : amrex::Real(0.0);
                     amrex::Real const e2_yz = has_tensor_e2 ? et2(i,j,k,5) : amrex::Real(0.0);
-                    E(0,0) = f1*et1(i,j,k,0) + w2*e2_xx;
-                    E(1,1) = f1*et1(i,j,k,1) + w2*e2_yy;
-                    E(2,2) = f1*et1(i,j,k,2) + w2*e2_zz;
-                    E(0,1) = E(1,0) = f1*et1(i,j,k,3) + w2*e2_xy;
-                    E(0,2) = E(2,0) = f1*et1(i,j,k,4) + w2*e2_xz;
-                    E(1,2) = E(2,1) = f1*et1(i,j,k,5) + w2*e2_yz;
+                    E(0,0) = f1*e1_xx + w2*e2_xx;
+                    E(1,1) = f1*e1_yy + w2*e2_yy;
+                    E(2,2) = f1*e1_zz + w2*e2_zz;
+                    E(0,1) = E(1,0) = f1*e1_xy + w2*e2_xy;
+                    E(0,2) = E(2,0) = f1*e1_xz + w2*e2_xz;
+                    E(1,2) = E(2,1) = f1*e1_yz + w2*e2_yz;
                 } else {
                     amrex::Real const ev = f1 * ea(i,j,k) + w2 * eps2s;
                     E(0,0) = ev; E(1,1) = ev; E(2,2) = ev;
