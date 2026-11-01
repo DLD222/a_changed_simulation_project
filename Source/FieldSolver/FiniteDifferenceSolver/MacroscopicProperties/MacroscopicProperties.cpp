@@ -366,27 +366,37 @@ MacroscopicProperties::InitData (
             amrex::Box const cbox = m_eps_mf->boxArray()[mfi.index()];
             int const ilo = cbox.smallEnd(0), ihi = cbox.bigEnd(0);
             int const jlo_dom = geom.Domain().smallEnd(1);
+            int const jhi_dom = geom.Domain().bigEnd(1);
             amrex::ParallelFor(b, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                 int const ii = amrex::min(amrex::max(i, ilo), ihi);
                 int const jm = amrex::max(j - 1, jlo_dom);   // ghost inside, boundary cell at the domain edge
-                int const jp = j;
+                int const jp = amrex::min(j, jhi_dom);   // node box is one wider than cell box
                 amrex::Real const eL = ec(ii, jm, k), eR = ec(ii, jp, k);
                 amrex::Real const sL = sc(ii, jm, k), sR = sc(ii, jp, k);
+                // sigma is a SCALAR field, independent of whether eps is a tensor:
+                // use the same rule in both branches (otherwise tensor eps + sigma>0
+                // silently becomes lossless).
+                amrex::Real const sv = normal
+                    ? ((sL + sR > amrex::Real(0.0)) ? amrex::Real(2.0)*sL*sR/(sL+sR) : amrex::Real(0.0))
+                    : ((sL <= amrex::Real(0.0) || sR <= amrex::Real(0.0))
+                        ? amrex::Real(0.0) : amrex::Real(0.5) * (sL + sR));
                 if (has_tensor_e) {
-                    // node tensor = arithmetic mean of the two cell tensors (O(h) at an
-                    // interface; a tau-average reusing chi_inv_anisotropic is the next step)
+                    // Diagonal tensor: xx,yy tangential -> arithmetic; zz normal -> harmonic
+                    // (D_n continuous). Off-diagonals: arithmetic (a tau-average using
+                    // chi_inv_anisotropic is the next refinement).
                     for (int q = 0; q < 6; ++q) {
-                        en(i,j,k,q) = amrex::Real(0.5) * (et(ii,jm,k,q) + et(ii,jp,k,q));
-                        sn(i,j,k,q) = amrex::Real(0.0);
+                        amrex::Real const a = et(ii,jm,k,q);
+                        amrex::Real const bq = et(ii,jp,k,q);
+                        en(i,j,k,q) = (q == 2)
+                            ? ((a + bq > amrex::Real(0.0)) ? amrex::Real(2.0)*a*bq/(a+bq) : amrex::Real(0.0))
+                            : amrex::Real(0.5) * (a + bq);
                     }
+                    for (int q = 0; q < 3; ++q) { sn(i,j,k,q) = sv; }
+                    for (int q = 3; q < 6; ++q) { sn(i,j,k,q) = amrex::Real(0.0); }
                 } else {
                     amrex::Real const ev = normal
                         ? ((eL + eR > amrex::Real(0.0)) ? amrex::Real(2.0)*eL*eR/(eL+eR) : amrex::Real(0.0))
                         : amrex::Real(0.5) * (eL + eR);
-                    amrex::Real const sv = normal
-                        ? ((sL + sR > amrex::Real(0.0)) ? amrex::Real(2.0)*sL*sR/(sL+sR) : amrex::Real(0.0))
-                        : ((sL <= amrex::Real(0.0) || sR <= amrex::Real(0.0))
-                            ? amrex::Real(0.0) : amrex::Real(0.5) * (sL + sR));
                     for (int q = 0; q < 3; ++q) { en(i,j,k,q) = ev; sn(i,j,k,q) = sv; }
                     for (int q = 3; q < 6; ++q) { en(i,j,k,q) = amrex::Real(0.0); sn(i,j,k,q) = amrex::Real(0.0); }
                 }
@@ -394,21 +404,6 @@ MacroscopicProperties::InitData (
         }
     }
 
-    {
-        for (int c = 0; c < 3; ++c) {
-            for (amrex::MFIter mfi(*m_eps_node[c]); mfi.isValid(); ++mfi) {
-                if (mfi.validbox().contains(320, 320, 0)) {
-                    auto const en = m_eps_node[c]->const_array(mfi);
-                    auto const sn = m_sigma_node[c]->const_array(mfi);
-                    amrex::Print() << "[NODE] c=" << c << " (320,319..322): ";
-                    for (int jj = 319; jj <= 322; ++jj) {
-                        amrex::Print() << " j" << jj << "(e=" << en(320,jj,0,0) << ",s=" << sn(320,jj,0,0) << ")";
-                    }
-                    amrex::Print() << "\n";
-                }
-            }
-        }
-    }
 
     // Fill the ghost cells once: the parser/constant init already wrote the analytic
     // continuation into the ghost region, but FillBoundary exchanges the periodic
