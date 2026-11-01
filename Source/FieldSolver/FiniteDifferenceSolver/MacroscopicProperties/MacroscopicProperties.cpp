@@ -319,6 +319,17 @@ MacroscopicProperties::InitData (
         }
     }
 
+    // Guard: sigma > 0 with subpixel off silently falls back to the first-order
+    // backward-Euler integrator. The exponential M1/M2 are only built inside
+    // InitSubpixelRows, which is never called when macroscopic_subpixel = 0;
+    // at a*dt ~ O(0.1..1) the two integrators differ visibly (see c03-E6).
+    if (!WarpX::macroscopic_subpixel && m_sigma_mf && m_sigma_mf->max(0) > amrex::Real(0.0)) {
+        ablastr::warn_manager::WMRecordWarning("Macroscopic properties",
+            "macroscopic.sigma > 0 but algo.macroscopic_subpixel=0: the E update "
+            "falls back to the first-order backward-Euler integrator instead of "
+            "the exact exponential step.");
+    }
+
     // Fill the ghost cells once: the parser/constant init already wrote the analytic
     // continuation into the ghost region, but FillBoundary exchanges the periodic
     // boundary values so that i-1 / j-1 reads at the domain edge are the wrapped values.

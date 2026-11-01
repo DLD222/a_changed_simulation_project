@@ -1,0 +1,72 @@
+# C03-E6: conductor-slab attenuation through a good conductor (exponential sigma).
+#
+# sigma/(omega eps0) = 6.0  (good conductor),  k = omega sqrt(mu eps0) sqrt(1 - i s/(w e))
+#   k = 11.8275 - 9.9951 i  ->  alpha = 9.995 1/m,  decay length 0.1 m
+#   in-slab wavelength 0.531 m  ->  17 ppw at dx = 0.03125 (640^2 over +-10)
+# sigma*dt/eps0 = 0.333  -> the step factor e^{-0.333} = 0.717; at this size the
+#   first-order backward-Euler integrator is visibly WRONG, so this case doubles as
+#   the discriminating test between BE and the exact exponential step (needs
+#   algo.macroscopic_subpixel = 1, else the run is downgraded with a warning).
+# The slab extends to the PEC at z = +10, so there is no rear surface: the wave
+# reaching the wall is attenuated by e^{-97} and the probes see a pure forward wave.
+#
+# Probes at CELL CENTRES z = 0.046875 and z = 0.234375 (dz = 0.1875 m).
+# x is also a cell centre (0.015625): on a cell boundary FieldProbe interpolation
+# picks the zero neighbour and reads 0 -- this bit the first version of this case.
+#   |E(z2)/E(z1)| = exp(-alpha dz) = exp(-1.877) = 0.1530   (power: exp(-2 alpha d) = 0.0234)
+#   arg           = -Re(k) dz = -127.1 deg
+max_step = 2500
+stop_time = 60.0e-9
+
+amr.n_cell = 640 640
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -10.0 -10.0
+geometry.prob_hi =  10.0  10.0
+
+warpx.cfl = 0.4
+warpx.use_filter = 0
+algo.maxwell_solver = yee
+algo.particle_shape = 1
+algo.em_solver_medium = macroscopic
+algo.macroscopic_subpixel = 1
+
+# periodic in x, PEC in z
+boundary.field_lo = periodic pec
+boundary.field_hi = periodic pec
+
+my_constants.eps0 = 8.8541878128e-12
+my_constants.c    = 299792458.0
+my_constants.mu0  = 1.0/(eps0*c*c)
+my_constants.lam  = 1.0
+my_constants.omega = 2.0*3.141592653589793*c/lam
+my_constants.tau  = 3.2e-9                 # fwidth ~5%
+my_constants.E0   = 1.0e6
+
+# vacuum everywhere; the conductor is defined by sigma only (slab z > 0)
+macroscopic.epsilon = 1.0*eps0
+macroscopic.sigma_function(x,y,z) = "0.1*(z>0.0)"
+
+# laser source on the z = -5 plane, +z, s-polarisation (Ey)
+lasers.names = laser1
+laser1.position = 0.0 0.0 -5.0
+laser1.direction = 0.0 0.0 1.0
+laser1.polarization = 0.0 1.0 0.0
+laser1.e_max = 1.0e6
+laser1.wavelength = 1.0
+laser1.profile = parse_field_function
+laser1.field_function(X,Y,t) = "E0*exp(-((t-3.0*tau)/tau)^2)*cos(omega*t)"
+
+# probes inside the slab
+warpx.reduced_diags_names = q1 q2
+q1.type = FieldProbe
+q1.intervals = 1
+q1.probe_geometry = Point
+q1.x_probe = 0.015625
+q1.z_probe = 0.046875
+q2.type = FieldProbe
+q2.intervals = 1
+q2.probe_geometry = Point
+q2.x_probe = 0.015625
+q2.z_probe = 0.234375
