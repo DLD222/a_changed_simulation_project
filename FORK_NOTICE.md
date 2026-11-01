@@ -31,6 +31,15 @@ copyright notices are retained in `LICENSE.txt`, `NOTICE.txt` and `LEGAL.txt`.
 - New files contributed by this fork carry an `SPDX-License-Identifier: BSD-3-Clause`
   header. Upstream files are left untouched.
 
+
+## Copyright
+
+- Upstream WarpX: Copyright (c) 2018, The Regents of the University of
+  California, through Lawrence Berkeley National Laboratory, and Lawrence
+  Livermore National Security, LLC (see `LICENSE.txt`, `NOTICE.txt`, `LEGAL.txt`).
+- Contributions of this fork: Copyright (c) 2026, DLD222.
+  Released under the BSD-3-Clause license (see `LICENSE`).
+
 ## Research-notes index
 
 - `Docs/research_notes/技术路径.md` — technical path (phases P0-P5)
