@@ -465,6 +465,7 @@ MacroscopicProperties::InitData (
 
 
 
+
     // Fill the ghost cells once: the parser/constant init already wrote the analytic
     // continuation into the ghost region, but FillBoundary exchanges the periodic
     // boundary values so that i-1 / j-1 reads at the domain edge are the wrapped values.
