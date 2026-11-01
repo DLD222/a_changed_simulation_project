@@ -1,7 +1,50 @@
-> **Fork notice** — This repository is a fork of [WarpX](https://github.com/BLAST-WarpX/warpX) that adds a tensor-medium (epsilon/mu/sigma) field-solver path with Yee + subpixel (Kottke) interfaces, a matrix-exponential conductivity integrator, and the accompanying validation suite. See [FORK_NOTICE.md](FORK_NOTICE.md) for scope, license and the research-notes index.
-> Upstream documentation: <https://warpx.readthedocs.io>
+# a_changed_simulation_project
 
-# WarpX
+**An unofficial fork of [WarpX](https://github.com/BLAST-WarpX/warpX), distributed
+under the BSD-3-Clause license.**
+
+This repository is derived from WarpX. It is **not** the official WarpX
+repository, and it is **not** affiliated with, endorsed by, sponsored by, or
+approved by the WarpX developers, the BLAST-WarpX organisation, Lawrence
+Berkeley National Laboratory, Lawrence Livermore National Security, or the
+U.S. Department of Energy. No such endorsement is claimed or implied. The names
+of the upstream authors and contributors are used only to preserve the required
+copyright notices; they are not used to promote this fork.
+
+- Upstream project: <https://github.com/BLAST-WarpX/warpX>
+- Upstream documentation: <https://warpx.readthedocs.io>
+- Upstream license: **BSD-3-Clause-LBNL** (see `LICENSE.txt`, `NOTICE.txt`, `LEGAL.txt`,
+  kept unmodified in this repository)
+- License of this fork: **BSD-3-Clause** (see `LICENSE`)
+
+## What this fork adds
+
+- A tensor-medium field solver (`algo.em_solver_medium = macroscopic`): Yee path with
+  3x3 permittivity / permeability / conductivity tensors, per-E-component
+  `chi^-1` rows, and the full matrix-vector update `E = alpha E + beta0 sum_d chi^-1_cd D_d`.
+- Kottke subpixel interface averaging (tau transform) with 6-component tensor input.
+- A matrix-exponential integrator for conductive media, precomputing
+  `M1 = exp(-A dt)` and `M2 = (1-exp(-A dt)) A^-1 eps^-1` per cell.
+- A quantitative validation suite (`benchmarks/`, `Docs/research_notes/`).
+
+See [FORK_NOTICE.md](FORK_NOTICE.md) for scope, the licence statement and the
+research-notes index.
+
+## License
+
+BSD-3-Clause. The canonical text is in [LICENSE](LICENSE). The upstream notices
+in `LICENSE.txt`, `NOTICE.txt` and `LEGAL.txt` are retained unmodified, as required
+by the upstream license. Files added by this fork carry an
+`SPDX-License-Identifier: BSD-3-Clause` header.
+
+---
+
+## Upstream README (reproduced below for reference)
+
+> The content from here on is the WarpX README as inherited. Its badges and links
+> point at the **upstream** project (Azure Pipelines, ReadTheDocs, CDash, Zenodo);
+> they do not refer to this fork and do not indicate any endorsement of it.
+### WarpX (upstream project)
 
 [![Code Status development](https://dev.azure.com/BLAST-WarpX/warpx/_apis/build/status/BLAST-WarpX.WarpX?branchName=development)](https://dev.azure.com/BLAST-WarpX/warpx/_build/latest?definitionId=1&branchName=development)
 [![Nightly Installation Tests](https://dev.azure.com/BLAST-WarpX/warpx/_apis/build/status/BLAST-WarpX.Nightly?branchName=nightly&label=nightly%20packages)](https://dev.azure.com/BLAST-WarpX/warpx/_build?definitionId=2)
