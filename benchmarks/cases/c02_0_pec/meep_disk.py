@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """T7 (Meep side): dielectric disk resonances vs resolution.
 
 Geometry: n=3.4 disk of radius r=1 in vacuum, PML, Ez point source at (0.5, 0)

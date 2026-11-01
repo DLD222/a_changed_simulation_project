@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Generate the PEC-cylinder Mie convergence cases (continuous-wave incidence).
 
 Incident field: a *continuous* time-harmonic plane wave along +z, produced by a

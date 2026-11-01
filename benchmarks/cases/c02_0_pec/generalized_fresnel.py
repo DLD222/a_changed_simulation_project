@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Reference reflection/transmission for a planar interface, including anisotropic media.
 
 Two levels of generality are provided.

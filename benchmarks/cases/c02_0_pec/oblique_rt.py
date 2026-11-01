@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Oblique-incidence R/T from two probe planes per side.
 
 Given complex amplitudes E1, E2 at z1, z2 (incident side, z1<z2<interface) and

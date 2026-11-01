@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """TM normal-incidence PEC reflection coefficient from FieldProbe point data.
 columns: 0 step, 1 time, 2 x, 3 y, 4 z, 5 Ex, 6 Ey, 7 Ez, 8 Bx, 9 By, 10 Bz, 11 S
 Incident pulse arrives first (positive Ex), reflected pulse later (negative Ex, PEC r=-1)."""

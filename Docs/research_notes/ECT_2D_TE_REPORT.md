@@ -1,5 +1,8 @@
 # ECT 共形求解器 2D XZ TE 模支持：项目报告
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 | 项 | 内容 |
 |---|---|
 | 报告日期 | 2026-10-31 |

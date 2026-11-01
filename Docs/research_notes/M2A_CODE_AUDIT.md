@@ -1,5 +1,8 @@
 # M2a 代码实现审查报告
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 审查对象：`<repo>` 中 ECT 求解器的 **2D XZ TE 模**实现（M2a-1b 的 B 侧）
 > 对照基线：`~/WarpX_changed`（上游 clone，`a389dc54a`，development 2026-10-29）
 > 审查日期：2026-10-31　|　构建：`build_2d`（2D XZ）/ `build`（3D），EB=ON、MPI、双精度

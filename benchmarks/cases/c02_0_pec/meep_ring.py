@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """T7 (Meep side): 2D ring resonator resonance frequency vs resolution.
 
 Geometry and source follow the standard Meep ring example: a high-index ring

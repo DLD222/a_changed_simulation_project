@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Compute WarpX-style field checksums (sum |field|) from an AMReX plotfile."""
 import sys, json
 import numpy as np

@@ -1,5 +1,8 @@
 # 《米氏收敛阶为什么还不到 2》复核报告
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 对象：`Docs/research_notes/C_SIDE_ORDER_ANALYSIS.md`（241 行，提交 `4ccafe5`）
 > 前置：`C_SIDE_REPORT_CHECK.md`（C 侧实现复核）、`C_SIDE_FIX_PLAN.md`（修正方案）
 > 方法：逐条复算文档的几何实验、复跑 F3 前后的同一算例并**对比 plotfile 字段**（不只看推出的 L2）、

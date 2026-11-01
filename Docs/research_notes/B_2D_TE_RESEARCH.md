@@ -1,5 +1,8 @@
 # B 调研报告：2D XZ 支持 TE 模（Bx/Bz）的共形 cut-cell 更新
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 范围：只做**源码阅读 + 文献/开源调研 + 设计问题**，**不实现**。
 > 代码：`~/WarpX_fluid`（WarpX 26.10 分支）；参照 `~/WarpX_changed`（只读，逐字节一致）。
 > 日期：2026-10-31

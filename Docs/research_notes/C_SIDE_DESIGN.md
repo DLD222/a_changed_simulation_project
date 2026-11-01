@@ -1,5 +1,8 @@
 # C 侧设计：E 场对偶共形 Ampere（`EvolveECartesianECT`）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 状态：**设计定稿，未实现**
 > 前置：`ECT_2D_TE_REPORT.md`（B 侧已完成，L3 已通过）、`M2A_SOURCE_REVIEW_FINDINGS.md` §5（源码核查）、
 > `cutcell-research.md` §8.2(b)（合并设计）

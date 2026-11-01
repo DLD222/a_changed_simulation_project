@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 import argparse, math, os, re, subprocess, sys
 import numpy as np
 C=299792458.0

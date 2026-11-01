@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Kottke 2008 tau-transform unit test (pure Python, no WarpX).
 
 Reference: C. Kottke, A. Farjadpour, S. G. Johnson,

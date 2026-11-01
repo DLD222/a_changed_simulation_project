@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Multi-mode complex-exponential fit (matrix-pencil / Prony) for resonator Q.
 
 The envelope-slope method fails whenever the probe sees a standing wave (several

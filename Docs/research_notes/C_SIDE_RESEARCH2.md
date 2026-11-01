@@ -1,5 +1,8 @@
 # C 侧调研（第二版）：DESIGN2 的物理/代码核对、新发现、疑问清单与开工条件
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 状态：**调研更新，待实现**
 > 对象：`C_SIDE_DESIGN2.md`（345 行，替代第一版 §3–§5）
 > 定位：本文之于 `C_SIDE_DESIGN2.md`，等价于 `C_SIDE_RESEARCH.md` 之于第一版设计。

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """L2a: bitwise equivalence of the ECT and Yee solvers on a regular domain.
 
 Both runs use the same setup with the embedded-boundary surface pushed outside

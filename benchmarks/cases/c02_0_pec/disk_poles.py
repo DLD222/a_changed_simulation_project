@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """T7 (analytic reference): complex poles of the TM Mie denominator for a dielectric disk.
 
 For a cylinder of radius a, index m, the TM (E || axis) coefficients have the

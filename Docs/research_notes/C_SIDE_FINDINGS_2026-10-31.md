@@ -1,5 +1,8 @@
 # C 侧三项发现（2026-10-31 晚）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 来源：`C_SIDE_ORDER_ANALYSIS_REVIEW.md`（对阶数分析的复核）触发的自查 + 一轮 `A_stab` 标定实验。
 > 三条发现都**推翻或修正了此前写进文档的结论**，其中一条是真实缺陷（PEC 内热斑）。
 > 相关提交：`a55b288`（代码修复）、`4ccafe5`（被更正的原文）。

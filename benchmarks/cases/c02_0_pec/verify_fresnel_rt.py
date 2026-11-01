@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Fresnel R/T verification of the subpixel (tensor eps^-1) path -- vacuum-reference method.
 
 Why this method

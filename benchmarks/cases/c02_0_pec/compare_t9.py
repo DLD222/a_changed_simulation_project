@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """T9: compare the WarpX dielectric-cylinder scattered field with the analytic Mie series.
 
 The WarpX run is CW (plane wave along +z), so the scattered field is obtained by

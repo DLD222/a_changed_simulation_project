@@ -1,5 +1,8 @@
 # G1 调研：level-set 精确对偶长度的教科书/论文/开源依据
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 对象：`C_SIDE_LS_ECT_PLAN.md` 的 G1（`Lx/Lz` 的 level-set 积分）
 > 目的：确认"沿对偶线求交积分"是标准做法、精度量级、以及 AMReX 侧的数据来源是"同源"的。
 

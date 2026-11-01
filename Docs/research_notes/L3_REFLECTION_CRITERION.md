@@ -1,5 +1,8 @@
 # L3 判据重建：30° 斜面 PEC 的反射束探针
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 代码：`~/WarpX_fluid`（2D 构建，ECT）
 > 算例：`benchmarks/cases/c02_0_pec/inputs_2d_l3`
 > 分析：`benchmarks/cases/c02_0_pec/analyze_l3.py`

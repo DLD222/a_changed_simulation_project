@@ -1,5 +1,8 @@
 # 为什么 A 不行、B 行：cut-cell 对偶几何的原理分析
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 对象：2D XZ PEC cut-cell 的 `Lx`/`Lz`（对偶开放长度）
 > 本文只讲**原理**（为什么），不讲实现（怎么做）。
 > 数据来源：`b294796`、`3439dbb` 的隔离实验；理论：Osher–Fedkiw 2003、Dey–Mittra 1997、

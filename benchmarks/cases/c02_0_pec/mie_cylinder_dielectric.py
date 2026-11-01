@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """2D Mie series for a *dielectric* circular cylinder, plane wave along +z.
 
 Same convention as mie_cylinder.py (time dependence e^{-j w t}, H_n^(1) outgoing,

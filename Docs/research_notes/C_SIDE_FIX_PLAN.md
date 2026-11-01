@@ -1,5 +1,8 @@
 # C 侧修正方案（依据 `C_SIDE_REPORT_CHECK.md`）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 输入：`C_SIDE_REPORT_CHECK.md`（第三方复核，复跑 L2a/L3/米氏 + 纯几何实验）
 > 输出：本文只给**思路与改动清单**，不改代码。
 > 涉及文件：`Source/WarpX.H`、`Source/WarpX.cpp`、`Source/FieldSolver/FiniteDifferenceSolver/EvolveE.cpp`、

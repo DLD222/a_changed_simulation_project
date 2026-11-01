@@ -1,5 +1,8 @@
 # C 侧 G1/G2 实施方案：level-set 精确 `Lx/Lz` 与 TE 面完整 ECT
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 前置：`C_SIDE_FINDINGS_2026-10-31.md`（F-1/F-2/F-3）、`C_SIDE_FIX_PLAN.md`、
 > `C_SIDE_ORDER_ANALYSIS_REVIEW.md`、`C_SIDE_DESIGN2.md` §1.5（方案 C）
 > 范围：本报告只讲两件事——**① `Lx/Lz` 的 level-set 精确积分怎么实现（G1）；② TE 面（`Bx`/`Bz`）

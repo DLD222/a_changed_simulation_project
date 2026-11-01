@@ -22,8 +22,14 @@ copyright notices are retained in `LICENSE.txt`, `NOTICE.txt` and `LEGAL.txt`.
 
 ## License
 
-- Code (including this fork's additions): **BSD-3-Clause**, same as WarpX.
-- Documentation under `Docs/research_notes/`: **CC-BY-4.0** unless noted.
+- **All code and documentation in this repository: BSD-3-Clause.**
+  Upstream WarpX is BSD-3-Clause; this fork's additions (tensor-medium solver,
+  test harnesses, research notes) are released under the same license.
+- The canonical text is in `LICENSE` (a standard BSD-3-Clause notice so that
+  GitHub recognises it). The upstream notices in `LICENSE.txt`, `NOTICE.txt`
+  and `LEGAL.txt` are retained unmodified.
+- New files contributed by this fork carry an `SPDX-License-Identifier: BSD-3-Clause`
+  header. Upstream files are left untouched.
 
 ## Research-notes index
 

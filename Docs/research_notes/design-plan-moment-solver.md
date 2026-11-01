@@ -1,5 +1,8 @@
 # 多流体矩模型求解器设计方案（Phase 1）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 日期：2026-10-31 · 基于 WarpX（WSL `~/WarpX_changed`）· 调研笔记存档于 artifact 目录 `research-notes-moment-solver.md`
 
 ## 0. 用户决策记录

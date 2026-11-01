@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Generate an oblique-incidence case (TE or TM polarization, any angle).
 
 Geometry: eb = cos(a)*(x-x0) + sin(a)*(z-z0), PEC on the positive side, incident

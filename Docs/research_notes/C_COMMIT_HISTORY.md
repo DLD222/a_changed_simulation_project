@@ -1,5 +1,8 @@
 # WarpX_fluid commit 历史归档
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 `git init` 重建仓库前导出的完整 commit message（共 96 条）。
 原始 .git 以 `WarpX_fluid-20261101-1737.bundle` 备份，可 `git clone` 恢复。
 

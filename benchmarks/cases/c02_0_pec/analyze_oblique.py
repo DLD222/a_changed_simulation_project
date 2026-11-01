@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Quantitative oblique-incidence check: reflection angle, amplitude, polarization.
 
 Reads a set of FieldProbe files placed on the specular beam

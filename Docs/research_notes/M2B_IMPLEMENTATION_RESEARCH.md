@@ -1,5 +1,8 @@
 # M2b 实施方案调研：电介质 σ/ε/μ（张量）+ 界面处理 + Fresnel R/T 验收
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 前置：`architecture-final.md`（决策 3/4、M2b 验收）、`C_SIDE_LS_ECT_PLAN.md`（场侧现状）
 > 范围：M2b = 电介质 σ/ε/μ + 界面处理；本文给出**方法、复用件、验证阶梯、实施顺序**。
 > 结论先行：

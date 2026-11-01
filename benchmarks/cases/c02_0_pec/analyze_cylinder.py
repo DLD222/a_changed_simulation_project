@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """PEC-cylinder scattering: boundary condition, shadowing, azimuthal pattern.
 
 A plane pulse hits a PEC cylinder of radius R along +z. Probes sit at r = 2 m

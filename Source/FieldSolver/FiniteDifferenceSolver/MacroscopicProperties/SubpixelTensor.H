@@ -1,6 +1,6 @@
 /* Copyright 2026
  *
- * License: BSD-3-Clause-LBNL
+ * SPDX-License-Identifier: BSD-3-Clause
  *
  * Kottke 2008 anisotropic subpixel averaging, host/device helpers.
  *

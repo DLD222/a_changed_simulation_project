@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """L3: reflection coefficient of a slanted PEC plane, from probes ON the beam.
 
 Geometry: eb = cos(alpha)*(x-x0) + sin(alpha)*(z-z0), PEC on the positive side,

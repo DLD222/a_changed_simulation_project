@@ -1,5 +1,8 @@
 # 介质（M2b）现状报告：问题清单、已排除项与未解根因
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 代码：`master` @ `637d11e`
 > 输入：`MEDIUM_CODE_AUDIT.md`（源码审计 P1–P10）、`M2B_IMPLEMENTATION_RESEARCH.md`（方案）、
 > 本轮实测（`verify_medium_wave.py`）

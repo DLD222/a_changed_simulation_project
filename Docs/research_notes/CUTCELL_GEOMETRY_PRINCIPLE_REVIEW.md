@@ -1,5 +1,8 @@
 # 《CUTCELL_GEOMETRY_PRINCIPLE.md》复核：纠错与实现路径（建议稿）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 对象：`Docs/research_notes/CUTCELL_GEOMETRY_PRINCIPLE.md`（194 行）
 > 方式：逐条对照源码、本项目已有实验与独立数值实验，并查阅 Osher–Fedkiw 2003、Dey–Mittra 1997、
 > Bossavit 1998、Taflove 2005、Meep 文档、AMReX EB2 源码。**本文是建议性的复核记录，不做决定**；

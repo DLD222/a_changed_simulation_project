@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Generate an L3 input for an arbitrary incidence angle from inputs_2d_l3.
 
 The probe positions are placed on the specularly reflected beam

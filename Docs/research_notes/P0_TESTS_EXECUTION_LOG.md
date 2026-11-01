@@ -1,5 +1,8 @@
 # P0 定量测试执行记录（T1–T10）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-11-01
 > 范围：P0 = 各向同性、`maxwell_solver = yee`、`em_solver_medium = macroscopic`、subpixel 界面。
 > 目的：记录每项测试的**实测数字、判据、排除项、未排除项**，以及共同阻塞（P8）。

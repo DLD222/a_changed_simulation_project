@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """3D TE pulse check: propagation speed, amplitude, Bx/Ey ratio.
 
 Reads two point probes on the z axis (p1 at z1, p2 at z2 > z1) of a planar TE

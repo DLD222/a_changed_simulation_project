@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """L2b: effective wall position of a grid-aligned PEC plane, ECT vs Yee.
 
 The plane sits exactly on the mesh (z = 0). Such a surface still creates "cut"

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """TM-mode C2-0: use Ex (col 5) for incident/reflected pulses."""
 import numpy as np
 d = np.loadtxt("diags/reducedfiles/fp_inc.txt", skiprows=1)

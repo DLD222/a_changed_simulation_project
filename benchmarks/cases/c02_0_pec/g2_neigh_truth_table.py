@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """G2 step 1: truth table for the ECT neighbour encoding in 2D XZ.
+# SPDX-License-Identifier: BSD-3-Clause
 
 Motivation
 ----------

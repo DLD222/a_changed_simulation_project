@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """T3: Snell's law from a 2D spatial FFT of the simulated field.
 
 For each side of the interface the transmitted field is a single plane wave, so a

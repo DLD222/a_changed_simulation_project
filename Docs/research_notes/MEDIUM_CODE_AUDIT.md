@@ -1,5 +1,8 @@
 # 源码介质（dielectric/material）部分审计：问题、病根与修复路线
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 范围：本项目 fork 的介质实现（`MacroscopicProperties`、`MacroscopicEvolveE.cpp`、
 > `EvolveECartesianECT` 的 M2b-1 材料分支、`FieldAccessorMacroscopic`、`Interp`、测试与文档）
 > 方法：通读源码 + 与上游 WarpX 对比 + 对照文献（Taflove 2005、Hwang–Cangellaris 2001、Kottke 2008、

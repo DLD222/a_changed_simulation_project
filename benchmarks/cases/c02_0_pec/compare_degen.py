@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Compare two runs of the M2a-1a degeneracy check (ECT vs Yee on a grid-aligned
 PEC plane). On such a geometry there are no cut cells, so the conformal ECT
 solver must reproduce the staircase Yee solver to round-off.

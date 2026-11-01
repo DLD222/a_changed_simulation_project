@@ -1,5 +1,8 @@
 # ECT 场传播根因报告（2D XZ）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 算例：`benchmarks/cases/c02_0_pec/`
 > 代码：`<repo>`（WarpX 26.10 分支 + `Source/MomentsSolver`）
 > 对照基线：`~/WarpX_changed`（2026-10-31 全新 clone）

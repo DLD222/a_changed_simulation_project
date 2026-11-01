@@ -1,5 +1,8 @@
 # C 侧实施报告：改动位置、效果、残留问题
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 范围：从"开工吧，动手"这条指令之后产生的**全部**改动（提交 `6225846` → `f1c6190`）。
 > 分支：`feat/ect-conformal-E`（开发）→ `master`（已合并），tag `c-side-2d-v1`。
 > 行号均指当前 `master` 工作树。

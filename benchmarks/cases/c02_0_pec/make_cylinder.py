@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Generate the PEC-cylinder scattering cases (TE and TM polarization).
 
 Geometry: PEC cylinder of radius R = 1 m at the origin, eb = sqrt(x^2+z^2) - R,

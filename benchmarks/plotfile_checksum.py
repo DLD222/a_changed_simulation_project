@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Minimal AMReX plotfile checksum: parse Header + Level_0/Cell_D_00000.
 Computes sum|field| per component, comparable to WarpX Regression benchmark JSON."""
 import numpy as np, sys, re, json

@@ -1,5 +1,8 @@
 # A：TM 基线验证（PEC 反射 r=−1）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 算例目录：`benchmarks/cases/c02_0_pec/`
 > 代码：`~/WarpX_fluid`（2D 构建 `warpx.2d.MPI.OMP.DP.PDP.EB`）
 > 日期：2026-10-31

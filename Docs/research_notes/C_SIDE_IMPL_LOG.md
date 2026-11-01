@@ -1,5 +1,8 @@
 # C 侧实施记录（S0'–S3' 完成）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 分支 `feat/ect-conformal-E`
 > 依据：`C_SIDE_DESIGN2.md`（实现）、`C_SIDE_RESEARCH2.md`（开工条件）、`Docs/C_SIDE_REVIEW.md`（审查）
 

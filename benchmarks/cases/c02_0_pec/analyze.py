@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """C2-0 analysis: extract reflection coefficient from FieldProbe point probes.
 columns: 0 step, 1 time, 2 x, 3 y, 4 z, 5 Ex, 6 Ey, 7 Ez, 8 Bx, 9 By, 10 Bz, 11 S"""
 import numpy as np

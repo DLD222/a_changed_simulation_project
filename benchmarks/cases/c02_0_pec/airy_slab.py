@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Airy (Fabry-Perot) reference for a slab of thickness d, n2, between n1=n3.
 
   r12=(n1-n2)/(n1+n2), r23=(n2-n1)/(n2+n1)=-r12, t12=2n1/(n1+n2), t23=2n2/(n2+n1)

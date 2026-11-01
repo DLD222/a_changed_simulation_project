@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Minimal regression for the uniform-medium ECT kernel (M2b).
 
 What it checks

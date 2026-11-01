@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: BSD-3-Clause
 import importlib
 for m in ["numpy", "yt", "openpmd_viewer", "scipy", "h5py", "adios2"]:
     try:

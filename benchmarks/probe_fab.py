@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 import numpy as np, struct, sys
 
 path = sys.argv[1]

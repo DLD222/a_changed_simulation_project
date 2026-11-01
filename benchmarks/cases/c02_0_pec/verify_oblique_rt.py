@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Oblique-incidence Fresnel R/T by the Poynting-flux method (no k needed).
 
 Why not two-probe wave decomposition: on the incident side the field is

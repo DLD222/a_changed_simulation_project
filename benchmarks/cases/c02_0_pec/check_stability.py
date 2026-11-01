@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """Stability smoke test for the conformal (BCK-only) TE path.
 
 Reads the FieldProbe and FieldEnergy reduced diagnostics of one run and checks

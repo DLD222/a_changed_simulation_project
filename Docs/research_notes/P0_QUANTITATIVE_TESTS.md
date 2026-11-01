@@ -1,5 +1,8 @@
 # P0 之后的定量仿真测试清单（可复现）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-11-01
 > 范围：P0 = 各向同性介质、`maxwell_solver = yee`、`em_solver_medium = macroscopic`、subpixel 界面。
 > 目的：在 P0 已通过"法向 Fresnel"之后，列出**还能定量测什么**、参考是什么（解析 / Meep / 自洽）、

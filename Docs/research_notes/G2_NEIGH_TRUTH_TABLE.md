@@ -1,5 +1,8 @@
 # G2 第 1 步：ECT 邻居编码真值表（2D XZ）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 目的：在改 `WarpXFaceExtensions.cpp` / `EvolveB.cpp` 之前，把
 > `(i_n, j_n)` 的语义在 XZ 下**钉死**，避免"改一处、静默错值"。
 > 脚本：`benchmarks/cases/c02_0_pec/g2_neigh_truth_table.py`（可直接跑，输出 24 行真值表）。

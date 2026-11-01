@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """P1 tensor reference: independent numpy implementation of
 
     chi_inv_isotropic / chi_inv_anisotropic (Kottke tau) / chi_bulk / chi_diag

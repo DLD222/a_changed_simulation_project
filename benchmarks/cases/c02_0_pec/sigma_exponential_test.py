@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """P2 reference: matrix-exponential update of a conductive anisotropic medium.
 
 The semi-discrete field equation for a lossy dielectric is

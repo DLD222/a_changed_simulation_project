@@ -1,5 +1,8 @@
 # M2a 合并设计的源码级核查：发现清单
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 目的：把 `cutcell-research.md` §8（B+C 合并设计）与 WarpX 26.10 fork 的实际源码逐条对照，
 > 记录"代码事实 / 与文档的差异 / 需要触碰的位置 / 待决问题"。
 >

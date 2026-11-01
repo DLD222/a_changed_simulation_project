@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
 """2D Mie series for a PEC circular cylinder, plane wave along +z.
 
 Convention: time dependence e^{-j w t}, so outgoing waves are Hankel functions of

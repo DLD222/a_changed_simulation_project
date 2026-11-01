@@ -1,5 +1,8 @@
 # C 侧设计（第二版）：修正后的 2D 对偶共形 Ampere
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 > 日期：2026-10-31 · 状态：**设计定稿（替代 `C_SIDE_DESIGN.md`），未实现**
 > 依据：`C_SIDE_RESEARCH.md`（文献与方法）、`Docs/C_SIDE_REVIEW.md`（对第一版的审查）、
 > `EvolveE.cpp:167-199`（2D 模板，本设计的退化目标）、`EvolveB.cpp:228-395`（B 侧参照）。

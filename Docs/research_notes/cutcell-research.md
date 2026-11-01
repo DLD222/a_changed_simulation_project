@@ -1,5 +1,8 @@
 # Cut-cell 实现调研报告（项目 M2a 前期调研 · 不实现）
 
+<!-- SPDX-License-Identifier: BSD-3-Clause -->
+
+
 日期：2026-10-31
 目标：为「完整 Maxwell + cut cell + 电介质 ε/μ/σ + 多流体」求解器厘清 cut-cell 的实现方法，确定 WarpX 已有/缺失，并给出选型问题。
 
