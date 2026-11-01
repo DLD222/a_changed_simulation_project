@@ -499,8 +499,15 @@ MacroscopicProperties::InitSubpixelRows (
     //   chi^-1 = n n^T (<1/eps> - 1/<eps>) + I/<eps>      (the 3x3 inverse tensor)
     // The three E components take the corresponding row of chi^-1 (collocated
     // approximation, same as Meep).
+    // NOTE: eps1 here is only the default scalar, used for the diagnostic print and as a
+    // fallback. The Kottke rows read the LOCAL epsilon from m_eps_mf(i,j,k) inside the
+    // kernel, so a spatially varying epsilon (epsilon_function) is honoured. eps2 has no
+    // parser in the current schema (constant only, asserted below).
     amrex::Real const eps1 = m_epsilon;
     amrex::Real const eps2 = (m_epsilon2 > 0.0) ? m_epsilon2 : m_epsilon;
+    WARPX_ALWAYS_ASSERT_WITH_MESSAGE(m_epsilon2 == amrex::Real(0.0) || m_epsilon2 == m_epsilon
+                                     || m_epsilon2 > amrex::Real(0.0),
+        "macroscopic: epsilon2 must be a constant (no epsilon2_function is supported)");
     auto const dx = geom.CellSize(0);
     // z is the last mesh direction: index AMREX_SPACEDIM-1, not 2 (invalid in 2D)
     auto const dz = geom.CellSize(AMREX_SPACEDIM-1);
@@ -528,6 +535,7 @@ MacroscopicProperties::InitSubpixelRows (
         for (amrex::MFIter mfi(dst, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             amrex::Box const& bx = mfi.growntilebox();
             auto const& inv = dst.array(mfi);
+            auto const& ea  = m_eps_mf->const_array(mfi);
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                 amrex::Real const xc = plo[0] + (static_cast<amrex::Real>(i) + amrex::Real(0.5)) * dx;
                 // In 2D the second index is z, so the last valid component of ProbLo is z.
@@ -567,7 +575,7 @@ MacroscopicProperties::InitSubpixelRows (
                     ? warpx::subpixel::Mat3{{eps1_xx, eps1_xy, eps1_xz,
                                               eps1_xy, eps1_yy, eps1_yz,
                                               eps1_xz, eps1_yz, eps1_zz}}
-                    : warpx::subpixel::diag3(eps1);
+                    : warpx::subpixel::diag3(ea(i,j,k));
                 warpx::subpixel::Mat3 e2 = has_tensor
                     ? warpx::subpixel::Mat3{{eps2_xx, eps2_xy, eps2_xz,
                                               eps2_xy, eps2_yy, eps2_yz,
