@@ -196,12 +196,16 @@ MacroscopicProperties::AllocateLevelMFs (
     const amrex::DistributionMapping& dmap,
     const amrex::IntVect& ng_EB_alloc )
 {
+    // Need >=1 ghost cell so that i-1 / j-1 reads at the domain boundary are in-bounds
+    // (seed/update/diagnose of rho_medium and the per-component Interp read neighbours).
+    amrex::IntVect ng_props = ng_EB_alloc;
+    ng_props = amrex::max(ng_props, amrex::IntVect::TheUnitVector());
     // sigma is cell-centered MultiFab
-    m_sigma_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_EB_alloc);
+    m_sigma_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_props);
     // epsilon is cell-centered MultiFab
-    m_eps_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_EB_alloc);
+    m_eps_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_props);
     // mu is cell-centered MultiFab
-    m_mu_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_EB_alloc);
+    m_mu_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_props);
 }
 
 void
@@ -249,6 +253,14 @@ MacroscopicProperties::InitData (
             geom.CellSizeArray(), geom.ProbDomain());
 
     }
+
+    // Fill the ghost cells once: the parser/constant init already wrote the analytic
+    // continuation into the ghost region, but FillBoundary exchanges the periodic
+    // boundary values so that i-1 / j-1 reads at the domain edge are the wrapped values.
+    // eps/sigma/mu are static, so this is a one-time cost, not per-step.
+    m_eps_mf->FillBoundary(geom.periodicity());
+    m_sigma_mf->FillBoundary(geom.periodicity());
+    m_mu_mf->FillBoundary(geom.periodicity());
 
     const amrex::IntVect sigma_stag = m_sigma_mf->ixType().toIntVect();
     const amrex::IntVect epsilon_stag = m_eps_mf->ixType().toIntVect();

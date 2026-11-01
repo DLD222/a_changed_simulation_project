@@ -1281,6 +1281,11 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
             if (!m_macroscopic_properties->rho_medium_seeded()) {
                 eps.FillBoundary(Geom(lev).periodicity());
                 sig.FillBoundary(Geom(lev).periodicity());
+                // E ghost too: the seed reads ex(i-1)/ez(j-1) at the domain edge, and the
+                // residual check reads the same ghosts after the E push; they must be the
+                // wrapped values, otherwise the boundary residual is O(div D), not 0.
+                Ex->FillBoundary(Geom(lev).periodicity());
+                Ez->FillBoundary(Geom(lev).periodicity());
                 for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
                     amrex::Box const bx = mfi.tilebox(rho->ixType().toIntVect()).grow(-bnd_shrink);
                     auto const& rh = rho->array(mfi);
@@ -1349,6 +1354,10 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                 for (int d = 0; d < AMREX_SPACEDIM; ++d) {
                     if (!Geom(lev).periodicity().isPeriodic(d)) { bnd_shrink[d] = 1; }
                 }
+                // E ghost after the push: the residual reads ex(i-1)/ez(j-1) at the edge,
+                // which must be E^{n+1} ghosts, not the stale E^n ones left by the push.
+                Ex2->FillBoundary(Geom(lev).periodicity());
+                Ez2->FillBoundary(Geom(lev).periodicity());
                 amrex::Gpu::DeviceScalar<amrex::Real> dmax(amrex::Real(0.0));
                 amrex::Real* const pmax = dmax.dataPtr();
                 for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
