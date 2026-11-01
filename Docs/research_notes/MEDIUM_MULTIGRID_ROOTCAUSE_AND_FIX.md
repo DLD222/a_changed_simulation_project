@@ -155,6 +155,27 @@ Ez（法向）:      ε_node = 2 ε_L ε_R/(ε_L+ε_R)   （调和平均，D_n �
 
 ---
 
+### 4.5 实现前必须知道的一个 API 陷阱（实测）
+
+跨 BoxArray 读取 cell-centred 的 `sigma` 时，两个访问接口的结果**不同**：
+
+```
+[XR] fab=55 box=((320,320)(383,383))  sig_min(const_array(mfi))=0.1  sig_min(operator[](mfi).min(0))=0
+```
+
+同一个 `mfi`、同一个 FAB（box 全在 z>0、σ≡0.1），`const_array(mfi)` 给出正确的 0.1，
+而 `operator[](mfi)` 给出 0 —— 后者不是按 `fabIndex` 取 FAB。
+
+**所以 4.3 里的所有跨场/跨 ba 读取都必须用 `const_array(mfi)` / `array(mfi)`，
+不能用 `mf[mfi]`**（包括 `min/max` 这类 host 归约，必须改成对 `Array4` 手写循环）。
+
+**同时实测：mask 版 `OverrideSync` 不能解决 E6。** 把 mask 按 4.2 的"导体侧 owner"
+正确设置（`const_array` 判 σ、`fab 54/55 = 1`）后，同步前后板内仍为 0。
+这说明同步只能搬运已有的值，无法让"真空侧的 0 副本"变成导体侧的正确值 ——
+与 §2 的判断一致：**必须让两份副本由同一条 node 规则更新**（4.1 的第 1、2 条），
+而不是靠事后同步。
+
+
 ## 5. 验证清单（缺一不算通过）
 
 ```
