@@ -353,6 +353,15 @@ MacroscopicProperties::InitData (
     //   normal     (Ez)    : harmonic mean (D_n continuous, series sigma)
     // Both grid copies of a shared node get the same value, so no owner sync is needed.
     bool const has_tensor_e = m_has_eps_tensor;
+    // interface normal for the tau average (no interface -> default +z, which makes the
+    // average reduce to "tangential arithmetic / normal harmonic")
+    auto const phi_n = (m_has_interface && m_interface_parser != nullptr)
+        ? m_interface_parser->compile<3>() : amrex::ParserExecutor<3>{};
+    bool const iface_on_n = (m_has_interface && m_interface_parser != nullptr);
+    amrex::Real const xlo_n = geom.ProbDomain().lo(0);
+    amrex::Real const zlo_n = geom.ProbDomain().lo(AMREX_SPACEDIM-1);
+    amrex::Real const dx_n = geom.CellSize(0);
+    amrex::Real const dz_n = geom.CellSize(AMREX_SPACEDIM-1);
     for (int c = 0; c < 3; ++c) {
         bool const normal = (c == 2);
         for (amrex::MFIter mfi(*m_eps_node[c]); mfi.isValid(); ++mfi) {
@@ -381,16 +390,40 @@ MacroscopicProperties::InitData (
                     : ((sL <= amrex::Real(0.0) || sR <= amrex::Real(0.0))
                         ? amrex::Real(0.0) : amrex::Real(0.5) * (sL + sR));
                 if (has_tensor_e) {
-                    // Diagonal tensor: xx,yy tangential -> arithmetic; zz normal -> harmonic
-                    // (D_n continuous). Off-diagonals: arithmetic (a tau-average using
-                    // chi_inv_anisotropic is the next refinement).
-                    for (int q = 0; q < 6; ++q) {
-                        amrex::Real const a = et(ii,jm,k,q);
-                        amrex::Real const bq = et(ii,jp,k,q);
-                        en(i,j,k,q) = (q == 2)
-                            ? ((a + bq > amrex::Real(0.0)) ? amrex::Real(2.0)*a*bq/(a+bq) : amrex::Real(0.0))
-                            : amrex::Real(0.5) * (a + bq);
+                    if (!iface_on_n) {
+                        // no interface: the two cells hold the same tensor
+                        for (int q = 0; q < 6; ++q) { en(i,j,k,q) = et(ii,jp,k,q); }
+                    } else {
+                        // tau average (Kottke): eps_node = inv3_sym(chi_inv(epsL, epsR, 1/2, n))
+                        amrex::Real const xn = xlo_n + amrex::Real(i) * dx_n;
+                        amrex::Real const zn = zlo_n + amrex::Real(j) * dz_n;
+                        amrex::Real const hh = amrex::Real(0.5) * amrex::min(dx_n, dz_n);
+                        amrex::Real const gx = phi_n(xn + hh, amrex::Real(0.0), zn)
+                                             - phi_n(xn - hh, amrex::Real(0.0), zn);
+                        amrex::Real const gz = phi_n(xn, amrex::Real(0.0), zn + hh)
+                                             - phi_n(xn, amrex::Real(0.0), zn - hh);
+                        amrex::Real const gn = std::sqrt(gx*gx + gz*gz);
+                        amrex::Real nrm[3] = {amrex::Real(0.0), amrex::Real(0.0), amrex::Real(1.0)};
+                        if (gn > amrex::Real(1e-30)) { nrm[0] = gx/gn; nrm[2] = gz/gn; }
+                        warpx::subpixel::Mat3 e1{}, e2{};
+                        e1.m[0] = et(ii,jm,k,0); e1.m[4] = et(ii,jm,k,1); e1.m[8] = et(ii,jm,k,2);
+                        e1.m[1] = e1.m[3] = et(ii,jm,k,3);
+                        e1.m[2] = e1.m[6] = et(ii,jm,k,4);
+                        e1.m[5] = e1.m[7] = et(ii,jm,k,5);
+                        e2.m[0] = et(ii,jp,k,0); e2.m[4] = et(ii,jp,k,1); e2.m[8] = et(ii,jp,k,2);
+                        e2.m[1] = e2.m[3] = et(ii,jp,k,3);
+                        e2.m[2] = e2.m[6] = et(ii,jp,k,4);
+                        e2.m[5] = e2.m[7] = et(ii,jp,k,5);
+                        amrex::Real chi[9];
+                        warpx::subpixel::chi_inv_anisotropic(e1, e2, amrex::Real(0.5), nrm, chi);
+                        warpx::subpixel::Mat3 chim{};
+                        for (int q = 0; q < 9; ++q) { chim.m[q] = chi[q]; }
+                        warpx::subpixel::Mat3 const en3 = warpx::subpixel::inv3_sym(chim);
+                        en(i,j,k,0) = en3.m[0]; en(i,j,k,1) = en3.m[4]; en(i,j,k,2) = en3.m[8];
+                        en(i,j,k,3) = en3.m[1]; en(i,j,k,4) = en3.m[2]; en(i,j,k,5) = en3.m[5];
                     }
+                    // sigma stays a scalar field: staircase rule (tangential vacuum-priority,
+                    // normal harmonic), NOT a tau/arithmetic average
                     for (int q = 0; q < 3; ++q) { sn(i,j,k,q) = sv; }
                     for (int q = 3; q < 6; ++q) { sn(i,j,k,q) = amrex::Real(0.0); }
                 } else {
