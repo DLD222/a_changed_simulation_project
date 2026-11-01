@@ -1373,7 +1373,6 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                     });
                 }
                 amrex::Real const resid = dmax.dataValue();
-                amrex::Print() << "[GAUSS] rho max/min=" << rho->max(0) << " / " << rho->min(0) << "\n";
                 amrex::Print() << "[GAUSS] step " << m_macroscopic_properties->gauss_check_step()
                                << "  max|div D - rho_medium| = " << resid << "\n";
             }
