@@ -56,7 +56,16 @@ E2 = (1,0)  → x 方向 big end +1
 
 ### 2.2 `array(mfi)` 只对"同一布局"的 FabArray 有效
 
-`FabArray::array(const MFIter&)` 的实现是 `fabPtr(mfi)->array()`，而 `fabPtr(mfi)` 用 `mfi.LocalIndex()` 去取 `indexArray[L]`。**它不检查对方的 BoxArray**。因此：
+`FabArray::array(const MFIter&)` 的实现是 `fabPtr(mfi)->array()`，而 `fabPtr(mfi)` 的实现（`AMReX_FabArray.H`）是：
+
+```cpp
+AMREX_ASSERT(mfi.LocalIndex() < indexArray.size());
+AMREX_ASSERT(DistributionMap() == mfi.DistributionMap());  // 只检查 DM，不检查 BoxArray
+int li = mfi.LocalIndex();
+return m_fabs_v[li];
+```
+
+**它只要求两者的 DistributionMapping 相同，不检查 BoxArray**。因为四个场都由同一个 cell `ba` 经 `convert` 派生，DM 相同、box 顺序相同，所以第 L 个 FAB 对应同一个 grid——**跨场访问在"grid 索引"意义上是自洽的**；真正的问题是 nodal box 的**物理重叠**（同一 node 在两个 FAB 各一份）。因此：
 
 - 用 E0 的 `mfi` 去 `array()` 一个布局不同的场，取到的是"第 L 个 box"——在 nodal 方向上与 E0 的第 L 个 box **差一格**；
 - 同一物理 node 在 E1 里属于两个 box（L 与 L+1），`EvolveB`（用 B0 的 mfi）读到哪一份，取决于 B0 的第 L 个 box 与 E1 的哪一份对齐。
@@ -140,7 +149,7 @@ Ez（法向）:      ε_node = 2 ε_L ε_R/(ε_L+ε_R)   （调和平均，D_n �
 
 | 文件 | 改动 |
 |---|---|
-| `MacroscopicProperties.{H,cpp}` | 新增按 E 分量 nodal 布局的 `m_eps_node_*`、`m_sigma_node_*`（或直接存 `m_sigma_m1/m2` 的三套 nodal 副本），在初始化时用 4.2 的规则填充（需要 1 层 ghost，σ/ε 已有 `ng=1`） |
+| `MacroscopicProperties.{H,cpp}` | 新增按 E 分量 nodal 布局的 `m_eps_node_*`、`m_sigma_node_*`（或直接存 `m_sigma_m1/m2` 的三套 nodal 副本），在初始化时用 4.2 的规则填充（需要 1 层 ghost，σ/ε 已有 `ng=1`）；**填充/判据一律用 `const_array(mfi)` + valid box，host 归约用 `MultiFab::min(comp, 0)`，见 §4.5** |
 | `MacroscopicEvolveE.cpp` | 第二遍：**对每个 E 分量，用自己的 `MFIter`/`tilebox` 迭代节点**；节点属性读 4.2 的 node 规则；写回该节点的两份副本（各自 grid 的 tilebox 都会覆盖到） |
 | `MacroscopicEvolveE.cpp`（BE 循环） | skip 条件从"cell σ>0"改为"**node σ>0**"（即 4.2 的 σ_node） |
 | `WarpXPushFieldsEM.cpp` | rho_medium 同样按 node 规则与 node 迭代；mask/同步改为 `FillBoundaryAndSync` 保险 |
@@ -174,6 +183,48 @@ Ez（法向）:      ε_node = 2 ε_L ε_R/(ε_L+ε_R)   （调和平均，D_n �
 这说明同步只能搬运已有的值，无法让"真空侧的 0 副本"变成导体侧的正确值 ——
 与 §2 的判断一致：**必须让两份副本由同一条 node 规则更新**（4.1 的第 1、2 条），
 而不是靠事后同步。
+
+
+### 4.5 实现前提：AMReX 的访问与归约语义（源码核实）
+
+实现 §4.3 时最容易踩的两个坑，已在 AMReX 源码里核实：
+
+**（1）`array(mfi)`、`const_array(mfi)`、`operator[](mfi)`、`get(mfi)` 是同一个 FAB**
+
+```cpp
+// AMReX_FabArray.H
+const FAB& operator[] (const MFIter& mfi) const noexcept { return *(this->fabPtr(mfi)); }
+Array4<value_type const> const_array (const MFIter& mfi) const noexcept { return fabPtr(mfi)->const_array(); }
+```
+
+它们都走 `fabPtr(mfi)` → `m_fabs_v[mfi.LocalIndex()]`。**不存在"两个 API 的 index 语义不同"**。
+
+**（2）`FAB::min(comp)` 包含 ghost，`MultiFab::min(comp, nghost=0)` 只扫 valid**
+
+```cpp
+// AMReX_BaseFab.H
+BaseFab<T>::min (int comp) const noexcept { return this->min<run_on>(this->domain, comp); }
+// this->domain = FAB 的分配区域（valid + ghost）
+// AMReX_MultiFab.H
+Real min (int comp, int nghost = 0, bool local = false) const;   // 默认只扫 valid
+```
+
+**这解释了之前"同一 mfi、`const_array` 读到 0.1、`operator[] .min(0)` 读到 0"的现象**：导体 grid 的 FAB 在界面一侧有一层 **ghost（真空 cell，σ=0）**，`FAB::min` 把它算进去 → 0；而 `const_array` 的手写循环扫的是 **valid box** → 0.1。**两者都是对的，只是区域不同。**
+
+由此也解释了 mask 版 `OverrideSync` 为什么"mask 正确但没效果"：用 `sigm[mfi].min(0)` 判"纯导体 grid"会把界面 ghost（0）算进去 → mask 被判成 0 → 同步没有可搬运的 owner。
+
+**实现规则（写进 §4.3 的每一步）：**
+
+```
+1. kernel 读场：array/const_array(mfi)，按全局 index 访问（不要用 [mfi].min()）
+2. host 归约/判据：MultiFab::min(comp, 0)（valid only），或 FAB::min(validbox, comp)
+3. 以"纯导体/纯真空"做判据前，先 FillBoundary 或显式限定 valid box
+4. 不要用 operator[](mfi).min() 做任何 mask/分支决策
+```
+
+**（3）`OverrideSync` 仍不能修复本问题**
+
+即使 mask 完全正确（用 valid box 判 σ、导体侧为 1），同步前后板内仍为 0：同步只在"已有的两份副本"之间选一个**覆盖**（precedence = 小 box index），无法把"真空侧的旧值 0"变成"导体侧的正确值"。**必须让两份副本由同一条 node 规则更新**（§4.1/§4.2），同步只作保险。
 
 
 ## 5. 验证清单（缺一不算通过）
