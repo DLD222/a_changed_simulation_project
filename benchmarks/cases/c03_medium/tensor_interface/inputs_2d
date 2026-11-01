@@ -5,8 +5,8 @@
 # `macroscopic.epsilon = epsilon0` (vacuum reference, used by analyze.py).
 # A third run with `macroscopic.epsilon2 = 5*eps0` (no tensor keys) checks that the
 # tensor path reduces to the scalar eps_yy path.
-max_step = 4000
-stop_time = 40.0e-9
+max_step = 8000
+stop_time = 80.0e-9
 
 amr.n_cell = 480 480
 amr.max_grid_size = 64

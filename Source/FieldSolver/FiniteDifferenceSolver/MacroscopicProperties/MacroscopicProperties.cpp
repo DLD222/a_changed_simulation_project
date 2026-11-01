@@ -246,6 +246,14 @@ MacroscopicProperties::InitData (
     const amrex::IntVect& Ey_stag,
     const amrex::IntVect& Ez_stag)
 {
+    // Guard against the silent downgrade that bit c03-E3: with an interface_function
+    // but subpixel off, the subpixel rows are never built and epsilon2 / tensor
+    // material 2 are simply ignored (the run then looks exactly like the vacuum run).
+    if (m_has_interface && !WarpX::macroscopic_subpixel) {
+        ablastr::warn_manager::WMRecordWarning("Macroscopic properties",
+            "interface_function is set but algo.macroscopic_subpixel=0: the subpixel "
+            "rows are NOT built and epsilon2 / tensor material 2 will be ignored.");
+    }
     // Initialize sigma
     if (m_sigma_s == "constant") {
 
