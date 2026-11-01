@@ -214,8 +214,13 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             if (has_sig_mat && sigma_arr(i, j, k) > amrex::Real(0.0)) { return; }
 
             // Interpolate conductivity, sigma, to Ex position on the grid
-            amrex::Real const sigma_interp = ablastr::coarsen::sample::Interp(sigma_arr, sigma_stag,
-                                                                                Ex_stag, macro_cr, i, j, k, scomp);
+            // sigma-free cells must not inherit damping from a neighbouring conductor
+            // through the face interpolation: that made the vacuum side of a sigma
+            // interface decay and locked E (and B) to zero inside the conductor
+            // (c03-E6, 技术路径 §7.11). With sigma = 0 everywhere this is a no-op.
+            amrex::Real sigma_interp = ablastr::coarsen::sample::Interp(sigma_arr, sigma_stag,
+                                                                 Ex_stag, macro_cr, i, j, k, scomp);
+            if (sigma_arr(i, j, k) <= amrex::Real(0.0)) { sigma_interp = amrex::Real(0.0); }
             // Interpolated permittivity, epsilon, to Ex position on the grid
             amrex::Real const epsilon_interp = ablastr::coarsen::sample::Interp(eps_arr, epsilon_stag,
                                                                                 Ex_stag, macro_cr, i, j, k, scomp);
@@ -250,8 +255,13 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             if (has_sig_mat && sigma_arr(i, j, k) > amrex::Real(0.0)) { return; }
 
             // Interpolate conductivity, sigma, to Ey position on the grid
-            amrex::Real const sigma_interp = ablastr::coarsen::sample::Interp(sigma_arr, sigma_stag,
-                                                                                Ey_stag, macro_cr, i, j, k, scomp);
+            // sigma-free cells must not inherit damping from a neighbouring conductor
+            // through the face interpolation: that made the vacuum side of a sigma
+            // interface decay and locked E (and B) to zero inside the conductor
+            // (c03-E6, 技术路径 §7.11). With sigma = 0 everywhere this is a no-op.
+            amrex::Real sigma_interp = ablastr::coarsen::sample::Interp(sigma_arr, sigma_stag,
+                                                                 Ey_stag, macro_cr, i, j, k, scomp);
+            if (sigma_arr(i, j, k) <= amrex::Real(0.0)) { sigma_interp = amrex::Real(0.0); }
             // Interpolated permittivity, epsilon, to Ey position on the grid
             amrex::Real const epsilon_interp = ablastr::coarsen::sample::Interp(eps_arr, epsilon_stag,
                                                                                 Ey_stag, macro_cr, i, j, k, scomp);
@@ -283,8 +293,13 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             if (has_sig_mat && sigma_arr(i, j, k) > amrex::Real(0.0)) { return; }
 
             // Interpolate conductivity, sigma, to Ez position on the grid
-            amrex::Real const sigma_interp = ablastr::coarsen::sample::Interp(sigma_arr, sigma_stag,
-                                                                                Ez_stag, macro_cr, i, j, k, scomp);
+            // sigma-free cells must not inherit damping from a neighbouring conductor
+            // through the face interpolation: that made the vacuum side of a sigma
+            // interface decay and locked E (and B) to zero inside the conductor
+            // (c03-E6, 技术路径 §7.11). With sigma = 0 everywhere this is a no-op.
+            amrex::Real sigma_interp = ablastr::coarsen::sample::Interp(sigma_arr, sigma_stag,
+                                                                 Ez_stag, macro_cr, i, j, k, scomp);
+            if (sigma_arr(i, j, k) <= amrex::Real(0.0)) { sigma_interp = amrex::Real(0.0); }
             // Interpolated permittivity, epsilon, to Ez position on the grid
             amrex::Real const epsilon_interp = ablastr::coarsen::sample::Interp(eps_arr, epsilon_stag,
                                                                                 Ez_stag, macro_cr, i, j, k, scomp);
