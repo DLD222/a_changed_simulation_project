@@ -117,6 +117,12 @@ public:
     amrex::GpuArray<amrex::Real,6> m_eps2_tensor{};
     bool has_eps_tensor () const {return m_has_eps_tensor;}
     bool has_eps2_tensor () const {return m_has_eps2_tensor;}
+    /** Cell-centred anisotropic permittivity tensors (6 comps each), filled from the
+     *  per-component parsers in InitData (constant or (x,y,z) function). */
+    amrex::MultiFab& get_eps_tensor_mf () {return (*m_eps_tensor_mf);}
+    amrex::MultiFab& get_eps2_tensor_mf () {return (*m_eps2_tensor_mf);}
+    bool has_eps_tensor_mf () const {return m_eps_tensor_mf != nullptr;}
+    bool has_eps2_tensor_mf () const {return m_eps2_tensor_mf != nullptr;}
 
     void InitSubpixelRows ( const amrex::Geometry& geom,
                             const amrex::EBFArrayBoxFactory* eb_fact,
@@ -162,6 +168,14 @@ private:
     std::unique_ptr<amrex::MultiFab> m_eps_mf;
     /** Multifab for m_mu */
     std::unique_ptr<amrex::MultiFab> m_mu_mf;
+    /** Cell-centred anisotropic permittivity tensors (6 comps each) */
+    std::unique_ptr<amrex::MultiFab> m_eps_tensor_mf;
+    std::unique_ptr<amrex::MultiFab> m_eps2_tensor_mf;
+    /** Per-component parser strings and parsers (constant or (x,y,z) function) */
+    std::string m_str_eps_tensor[6];
+    std::string m_str_eps2_tensor[6];
+    std::unique_ptr<amrex::Parser> m_eps_tensor_parser[6];
+    std::unique_ptr<amrex::Parser> m_eps2_tensor_parser[6];
     /** Inverse-permittivity rows (3 comps each) at the Ex/Ey/Ez staggers */
     std::unique_ptr<amrex::MultiFab> m_eps_inv_x;
     std::unique_ptr<amrex::MultiFab> m_eps_inv_y;

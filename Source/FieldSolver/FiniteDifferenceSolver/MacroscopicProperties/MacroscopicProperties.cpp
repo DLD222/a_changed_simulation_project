@@ -106,8 +106,20 @@ MacroscopicProperties::ReadParameters ()
         amrex::Real v2[6] = {0,0,0,0,0,0};
         int n1 = 0, n2 = 0;
         for (int i = 0; i < 6; ++i) {
-            if (utils::parser::queryWithParser(pp_macroscopic, k1[i], v1[i])) { ++n1; }
-            if (utils::parser::queryWithParser(pp_macroscopic, k2[i], v2[i])) { ++n2; }
+            // Per-component parser: a constant ("1.0") or a spatial function ("1+x").
+            // makeParser handles both; the value at (0,0,0) is kept for the asserts/print.
+            if (pp_macroscopic.query(k1[i], m_str_eps_tensor[i])) {
+                m_eps_tensor_parser[i] = std::make_unique<amrex::Parser>(
+                    utils::parser::makeParser(m_str_eps_tensor[i], {"x","y","z"}));
+                v1[i] = m_eps_tensor_parser[i]->compile<3>()(amrex::Real(0.0), amrex::Real(0.0), amrex::Real(0.0));
+                ++n1;
+            }
+            if (pp_macroscopic.query(k2[i], m_str_eps2_tensor[i])) {
+                m_eps2_tensor_parser[i] = std::make_unique<amrex::Parser>(
+                    utils::parser::makeParser(m_str_eps2_tensor[i], {"x","y","z"}));
+                v2[i] = m_eps2_tensor_parser[i]->compile<3>()(amrex::Real(0.0), amrex::Real(0.0), amrex::Real(0.0));
+                ++n2;
+            }
         }
         if (key1) {
             WARPX_ALWAYS_ASSERT_WITH_MESSAGE(n1 > 0,
@@ -206,6 +218,16 @@ MacroscopicProperties::AllocateLevelMFs (
     m_eps_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_props);
     // mu is cell-centered MultiFab
     m_mu_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_props);
+    // Cell-centred anisotropic permittivity tensors (6 comps each), present only when
+    // epsilon_tensor_* / epsilon2_tensor_* are given.
+    if (m_has_eps_tensor) {
+        m_eps_tensor_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 6, ng_props);
+        m_eps_tensor_mf->setVal(amrex::Real(0.0));
+    }
+    if (m_has_eps2_tensor) {
+        m_eps2_tensor_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 6, ng_props);
+        m_eps2_tensor_mf->setVal(amrex::Real(0.0));
+    }
 }
 
 void
@@ -252,6 +274,32 @@ MacroscopicProperties::InitData (
         InitializeMacroMultiFabUsingParser(m_mu_mf.get(), m_mu_parser->compile<3>(),
             geom.CellSizeArray(), geom.ProbDomain());
 
+    }
+
+    // Fill cell-centred anisotropic permittivity tensors (6 comps each) from the
+    // per-component parsers (constant or (x,y,z) function). A component without a
+    // parser stays 0, matching the previous GpuArray default.
+    if (m_has_eps_tensor || m_has_eps2_tensor) {
+        auto const dxa = geom.CellSizeArray();
+        amrex::Real const lox = geom.ProbDomain().lo(0);
+        amrex::Real const loz = geom.ProbDomain().lo(AMREX_SPACEDIM-1);
+        auto fill_one = [&](amrex::MultiFab& mf, int c, amrex::Parser const* p) {
+            if (p == nullptr) { return; }
+            amrex::ParserExecutor<3> const pex = p->compile<3>();
+            for (amrex::MFIter mfi(mf, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+                amrex::Box const& tb = mfi.tilebox(mf.ixType().toIntVect(), mf.nGrowVect());
+                auto const& fab = mf.array(mfi);
+                amrex::ParallelFor(tb, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    amrex::Real const x = (amrex::Real(i) + amrex::Real(0.5)) * dxa[0] + lox;
+                    amrex::Real const z = (amrex::Real(j) + amrex::Real(0.5)) * dxa[1] + loz;
+                    fab(i,j,k,c) = pex(x, amrex::Real(0.0), z);
+                });
+            }
+        };
+        for (int c = 0; c < 6; ++c) {
+            if (m_has_eps_tensor) { fill_one(*m_eps_tensor_mf, c, m_eps_tensor_parser[c].get()); }
+            if (m_has_eps2_tensor) { fill_one(*m_eps2_tensor_mf, c, m_eps2_tensor_parser[c].get()); }
+        }
     }
 
     // Fill the ghost cells once: the parser/constant init already wrote the analytic
@@ -357,9 +405,6 @@ MacroscopicProperties::InitSubpixelRows (
     // P2: precompute M1 = exp(-A dt), M2 = (1-exp(-A dt)) A^-1 eps^-1 for sigma>0
     // cells only (see 技术路径 §7.7). Called from every branch that fills the rows.
     auto fill_sigma_mats = [&]() {
-        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(!m_has_eps_tensor,
-            "macroscopic sigma exponential: tensor epsilon is not yet supported here "
-            "(a cell-centred eps tensor is required; currently only scalar eps1/eps2)");
         amrex::Real const smax = m_sigma_mf ? m_sigma_mf->max(0) : amrex::Real(0.0);
         if (smax <= amrex::Real(0.0)) { return; }
         m_sigma_m1 = std::make_unique<amrex::MultiFab>(ba, dm, 9, 0);
@@ -381,20 +426,21 @@ MacroscopicProperties::InitSubpixelRows (
         auto const phi_s = iface_on ? m_interface_parser->compile<3>() : amrex::ParserExecutor<3>{};
         constexpr int nsub2 = 4;
         amrex::Real const inv_ns = amrex::Real(1.0) / static_cast<amrex::Real>(nsub2);
+        bool const has_tensor_e  = m_has_eps_tensor;
+        bool const has_tensor_e2 = m_has_eps2_tensor;
         for (amrex::MFIter mfi(*m_sigma_m1, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             amrex::Box const& bx = mfi.validbox();
             auto const& m1a = m_sigma_m1->array(mfi);
             auto const& m2a = m_sigma_m2->array(mfi);
             auto const& sa  = sigm.const_array(mfi);
             auto const& ea  = epsm.const_array(mfi);
+            auto const& et1 = has_tensor_e  ? m_eps_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+            auto const& et2 = has_tensor_e2 ? m_eps2_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                 amrex::Real const sv = sa(i,j,k);
                 if (sv <= amrex::Real(0.0)) { return; }
-                // eps of THIS cell: m_eps_mf holds the local (possibly parser) value of
-                // material 1; m_epsilon is only the default scalar and would be wrong for a
-                // spatially varying epsilon. Interface cells use <eps> = f*eps1 + (1-f)*eps2.
-                // NOTE: tensor eps is not yet supported here (asserted below).
-                amrex::Real ev = ea(i,j,k);
+                // fill fraction of material 1 (same phi sub-sampling as the Kottke rows)
+                amrex::Real f1 = amrex::Real(1.0);
                 if (iface_on) {
                     amrex::Real const xc = plo_x + (static_cast<amrex::Real>(i) + amrex::Real(0.5)) * dxs;
                     amrex::Real const zc = plo_z + (static_cast<amrex::Real>(j) + amrex::Real(0.5)) * dzs;
@@ -406,11 +452,30 @@ MacroscopicProperties::InitSubpixelRows (
                             if (phi_s(x, amrex::Real(0.0), z) > amrex::Real(0.0)) { ++n1; }
                         }
                     }
-                    amrex::Real const f1 = static_cast<amrex::Real>(n1) * inv_ns * inv_ns;
-                    ev = f1 * ea(i,j,k) + (amrex::Real(1.0) - f1) * eps2s;   // <eps>
+                    f1 = static_cast<amrex::Real>(n1) * inv_ns * inv_ns;
                 }
+                // A = eps^-1 sigma: eps is the local tensor (6 comps: xx,yy,zz,xy,xz,yz),
+                // f-weighted at an interface; material 2 falls back to scalar eps2 on the
+                // diagonal when only eps1 is a tensor.
                 warpx::subpixel::Mat3 E{};
-                E(0,0) = ev; E(1,1) = ev; E(2,2) = ev;
+                amrex::Real const w2 = amrex::Real(1.0) - f1;
+                if (has_tensor_e) {
+                    amrex::Real const e2_xx = has_tensor_e2 ? et2(i,j,k,0) : eps2s;
+                    amrex::Real const e2_yy = has_tensor_e2 ? et2(i,j,k,1) : eps2s;
+                    amrex::Real const e2_zz = has_tensor_e2 ? et2(i,j,k,2) : eps2s;
+                    amrex::Real const e2_xy = has_tensor_e2 ? et2(i,j,k,3) : amrex::Real(0.0);
+                    amrex::Real const e2_xz = has_tensor_e2 ? et2(i,j,k,4) : amrex::Real(0.0);
+                    amrex::Real const e2_yz = has_tensor_e2 ? et2(i,j,k,5) : amrex::Real(0.0);
+                    E(0,0) = f1*et1(i,j,k,0) + w2*e2_xx;
+                    E(1,1) = f1*et1(i,j,k,1) + w2*e2_yy;
+                    E(2,2) = f1*et1(i,j,k,2) + w2*e2_zz;
+                    E(0,1) = E(1,0) = f1*et1(i,j,k,3) + w2*e2_xy;
+                    E(0,2) = E(2,0) = f1*et1(i,j,k,4) + w2*e2_xz;
+                    E(1,2) = E(2,1) = f1*et1(i,j,k,5) + w2*e2_yz;
+                } else {
+                    amrex::Real const ev = f1 * ea(i,j,k) + w2 * eps2s;
+                    E(0,0) = ev; E(1,1) = ev; E(2,2) = ev;
+                }
                 warpx::subpixel::Mat3 S{};
                 S(0,0) = sv; S(1,1) = sv; S(2,2) = sv;
                 warpx::subpixel::Mat3 MM1{}, MM2{};
@@ -439,25 +504,21 @@ MacroscopicProperties::InitSubpixelRows (
     //      homogeneous crystal, and it is what makes epsilon_tensor_* usable
     //      without an interface_function.
     if (m_has_eps_tensor && !m_has_interface) {
-        warpx::subpixel::Mat3 e1{};
-        e1.m[0] = m_eps_tensor[0]; e1.m[4] = m_eps_tensor[1]; e1.m[8] = m_eps_tensor[2];
-        e1.m[1] = e1.m[3] = m_eps_tensor[3];
-        e1.m[2] = e1.m[6] = m_eps_tensor[4];
-        e1.m[5] = e1.m[7] = m_eps_tensor[5];
-        warpx::subpixel::Mat3 const chi1 = warpx::subpixel::inv3_sym(e1);
-
-        amrex::Real rows[3][3];
-        for (int c = 0; c < 3; ++c) {
-            for (int d = 0; d < 3; ++d) { rows[c][d] = chi1(c, d); }
-        }
         auto fill = [&](amrex::MultiFab& dst, int row) {
             for (amrex::MFIter mfi(dst, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
                 amrex::Box const& bx = mfi.growntilebox();
                 auto const& inv = dst.array(mfi);
+                auto const& et1 = m_eps_tensor_mf->const_array(mfi);
                 amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                    inv(i,j,k,0) = rows[row][0];
-                    inv(i,j,k,1) = rows[row][1];
-                    inv(i,j,k,2) = rows[row][2];
+                    warpx::subpixel::Mat3 e1{};
+                    e1.m[0] = et1(i,j,k,0); e1.m[4] = et1(i,j,k,1); e1.m[8] = et1(i,j,k,2);
+                    e1.m[1] = e1.m[3] = et1(i,j,k,3);
+                    e1.m[2] = e1.m[6] = et1(i,j,k,4);
+                    e1.m[5] = e1.m[7] = et1(i,j,k,5);
+                    warpx::subpixel::Mat3 const chi1 = warpx::subpixel::inv3_sym(e1);
+                    inv(i,j,k,0) = chi1(row,0);
+                    inv(i,j,k,1) = chi1(row,1);
+                    inv(i,j,k,2) = chi1(row,2);
                 });
             }
         };
@@ -533,24 +594,15 @@ MacroscopicProperties::InitSubpixelRows (
     amrex::Real const inv_nsub = amrex::Real(1.0) / static_cast<amrex::Real>(nsub);
 
     bool const has_tensor = m_has_eps_tensor;
-    amrex::Real const eps1_xx = m_eps_tensor[0];
-    amrex::Real const eps1_yy = m_eps_tensor[1];
-    amrex::Real const eps1_zz = m_eps_tensor[2];
-    amrex::Real const eps1_xy = m_eps_tensor[3];
-    amrex::Real const eps1_xz = m_eps_tensor[4];
-    amrex::Real const eps1_yz = m_eps_tensor[5];
-    amrex::Real const eps2_xx = m_eps2_tensor[0];
-    amrex::Real const eps2_yy = m_eps2_tensor[1];
-    amrex::Real const eps2_zz = m_eps2_tensor[2];
-    amrex::Real const eps2_xy = m_eps2_tensor[3];
-    amrex::Real const eps2_xz = m_eps2_tensor[4];
-    amrex::Real const eps2_yz = m_eps2_tensor[5];
+    bool const has_tensor2 = m_has_eps2_tensor;
 
     auto fill_rows = [&](amrex::MultiFab& dst, int row) {
         for (amrex::MFIter mfi(dst, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
             amrex::Box const& bx = mfi.growntilebox();
             auto const& inv = dst.array(mfi);
             auto const& ea  = m_eps_mf->const_array(mfi);
+            auto const& et1 = has_tensor  ? m_eps_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+            auto const& et2 = has_tensor2 ? m_eps2_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                 amrex::Real const xc = plo[0] + (static_cast<amrex::Real>(i) + amrex::Real(0.5)) * dx;
                 // In 2D the second index is z, so the last valid component of ProbLo is z.
@@ -586,15 +638,17 @@ MacroscopicProperties::InitSubpixelRows (
                 // input and an explicitly diagonal tensor therefore take the identical
                 // closed-form path (bitwise), while any off-diagonal entry switches to
                 // the tau transform.
+                // e1/e2 read the LOCAL anisotropic tensor (6 comps: xx,yy,zz,xy,xz,yz)
+                // at this cell, so a spatially varying epsilon_tensor_* is honoured.
                 warpx::subpixel::Mat3 e1 = has_tensor
-                    ? warpx::subpixel::Mat3{{eps1_xx, eps1_xy, eps1_xz,
-                                              eps1_xy, eps1_yy, eps1_yz,
-                                              eps1_xz, eps1_yz, eps1_zz}}
+                    ? warpx::subpixel::Mat3{{et1(i,j,k,0), et1(i,j,k,3), et1(i,j,k,4),
+                                              et1(i,j,k,3), et1(i,j,k,1), et1(i,j,k,5),
+                                              et1(i,j,k,4), et1(i,j,k,5), et1(i,j,k,2)}}
                     : warpx::subpixel::diag3(ea(i,j,k));
-                warpx::subpixel::Mat3 e2 = has_tensor
-                    ? warpx::subpixel::Mat3{{eps2_xx, eps2_xy, eps2_xz,
-                                              eps2_xy, eps2_yy, eps2_yz,
-                                              eps2_xz, eps2_yz, eps2_zz}}
+                warpx::subpixel::Mat3 e2 = has_tensor2
+                    ? warpx::subpixel::Mat3{{et2(i,j,k,0), et2(i,j,k,3), et2(i,j,k,4),
+                                              et2(i,j,k,3), et2(i,j,k,1), et2(i,j,k,5),
+                                              et2(i,j,k,4), et2(i,j,k,5), et2(i,j,k,2)}}
                     : warpx::subpixel::diag3(eps2);
                 amrex::Real s1 = amrex::Real(0.0), s2 = amrex::Real(0.0);
                 if (warpx::subpixel::is_isotropic(e1, s1) &&
