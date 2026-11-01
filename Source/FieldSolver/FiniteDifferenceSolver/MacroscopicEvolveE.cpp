@@ -258,9 +258,6 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             const amrex::Real alpha = T_MacroAlgo::alpha( sigma_interp, epsilon_interp, dt);
             const amrex::Real beta = T_MacroAlgo::beta( sigma_interp, epsilon_interp, dt);
 
-            amrex::Real const Dy = - T_Algo::DownwardDx(Hz, coefs_x, n_coefs_x, i, j, k,0)
-                                    + T_Algo::DownwardDz(Hx, coefs_z, n_coefs_z, i, j, k,0)
-                                    - jy(i, j, k);
             amrex::Real const Dy0 =   T_Algo::DownwardDz(Hx, coefs_z, n_coefs_z, i, j, k,0)
                                     - T_Algo::DownwardDx(Hz, coefs_x, n_coefs_x, i, j, k,0);
             amrex::Real const Dx0 = - T_Algo::DownwardDz(Hy, coefs_z, n_coefs_z, i, j, k,0)
@@ -294,9 +291,6 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             const amrex::Real alpha = T_MacroAlgo::alpha( sigma_interp, epsilon_interp, dt);
             const amrex::Real beta = T_MacroAlgo::beta( sigma_interp, epsilon_interp, dt);
 
-            amrex::Real const Dz = - T_Algo::DownwardDy(Hx, coefs_y, n_coefs_y, i, j, k,0)
-                                    + T_Algo::DownwardDx(Hy, coefs_x, n_coefs_x, i, j, k,0)
-                                    - jz(i, j, k);
             amrex::Real const Dz0 =   T_Algo::DownwardDx(Hy, coefs_x, n_coefs_x, i, j, k,0)
                                     - T_Algo::DownwardDy(Hx, coefs_y, n_coefs_y, i, j, k,0);
             amrex::Real const Dx0 = - T_Algo::DownwardDz(Hy, coefs_z, n_coefs_z, i, j, k,0)

@@ -505,9 +505,12 @@ MacroscopicProperties::InitSubpixelRows (
     // parser in the current schema (constant only, asserted below).
     amrex::Real const eps1 = m_epsilon;
     amrex::Real const eps2 = (m_epsilon2 > 0.0) ? m_epsilon2 : m_epsilon;
-    WARPX_ALWAYS_ASSERT_WITH_MESSAGE(m_epsilon2 == amrex::Real(0.0) || m_epsilon2 == m_epsilon
-                                     || m_epsilon2 > amrex::Real(0.0),
-        "macroscopic: epsilon2 must be a constant (no epsilon2_function is supported)");
+    // interface_function needs a material-2 permittivity; without it the Kottke rows
+    // and fill_sigma_mats would silently fall back to eps1 (wrong by O(1)).
+    WARPX_ALWAYS_ASSERT_WITH_MESSAGE(!m_has_interface
+        || (m_epsilon2 > amrex::Real(0.0) || m_has_eps2_tensor),
+        "macroscopic: interface_function requires a material-2 permittivity "
+        "(epsilon2 or epsilon2_tensor_*)");
     auto const dx = geom.CellSize(0);
     // z is the last mesh direction: index AMREX_SPACEDIM-1, not 2 (invalid in 2D)
     auto const dz = geom.CellSize(AMREX_SPACEDIM-1);

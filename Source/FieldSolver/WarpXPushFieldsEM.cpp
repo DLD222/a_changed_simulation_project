@@ -1267,6 +1267,13 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
             amrex::Real const dx = Geom(lev).CellSize(0);
             amrex::Real const dz = Geom(lev).CellSize(AMREX_SPACEDIM-1);
             amrex::Real const dtl = a_dt;
+            // Boundary nodes in non-periodic directions carry a surface charge (a
+            // physical discontinuity), not the conduction charge this update governs,
+            // so they are excluded from the seed/update and from the residual check.
+            amrex::IntVect bnd_shrink = amrex::IntVect::TheZeroVector();
+            for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+                if (!Geom(lev).periodicity().isPeriodic(d)) { bnd_shrink[d] = 1; }
+            }
             // Seed rho_medium(0) = div_h(D(0)) on the very first call, so the test
             // measures drift, not the initial-condition error. Per-instance flag (a
             // process running two problems must re-seed). Ghost fill is done once here
@@ -1275,7 +1282,7 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                 eps.FillBoundary(Geom(lev).periodicity());
                 sig.FillBoundary(Geom(lev).periodicity());
                 for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-                    amrex::Box const& bx = mfi.tilebox(rho->ixType().toIntVect());
+                    amrex::Box const bx = mfi.tilebox(rho->ixType().toIntVect()).grow(-bnd_shrink);
                     auto const& rh = rho->array(mfi);
                     auto const& ex = Ex->const_array(mfi);
                     auto const& ez = Ez->const_array(mfi);
@@ -1288,7 +1295,7 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                 m_macroscopic_properties->set_rho_medium_seeded();
             }
             for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-                amrex::Box const& bx = mfi.tilebox(rho->ixType().toIntVect());
+                amrex::Box const bx = mfi.tilebox(rho->ixType().toIntVect()).grow(-bnd_shrink);
                 auto const& rh = rho->array(mfi);
                 auto const& ex = Ex->const_array(mfi);
                 auto const& ez = Ez->const_array(mfi);
@@ -1338,10 +1345,14 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                 auto& eps2 = m_macroscopic_properties->getepsilon_mf();
                 amrex::Real const dx = Geom(lev).CellSize(0);
                 amrex::Real const dz = Geom(lev).CellSize(AMREX_SPACEDIM-1);
+                amrex::IntVect bnd_shrink = amrex::IntVect::TheZeroVector();
+                for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+                    if (!Geom(lev).periodicity().isPeriodic(d)) { bnd_shrink[d] = 1; }
+                }
                 amrex::Gpu::DeviceScalar<amrex::Real> dmax(amrex::Real(0.0));
                 amrex::Real* const pmax = dmax.dataPtr();
                 for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-                    amrex::Box const& bx = mfi.tilebox(rho->ixType().toIntVect());
+                    amrex::Box const bx = mfi.tilebox(rho->ixType().toIntVect()).grow(-bnd_shrink);
                     auto const& rh = rho->const_array(mfi);
                     auto const& ex = Ex2->const_array(mfi);
                     auto const& ez = Ez2->const_array(mfi);
