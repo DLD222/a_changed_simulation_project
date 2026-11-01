@@ -352,9 +352,20 @@ MacroscopicProperties::InitData (
     //   tangential (Ex, Ey): arithmetic mean, sigma = 0 if either side is vacuum
     //   normal     (Ez)    : harmonic mean (D_n continuous, series sigma)
     // Both grid copies of a shared node get the same value, so no owner sync is needed.
-    bool const has_tensor_e = m_has_eps_tensor;
-    // interface normal for the tau average (no interface -> default +z, which makes the
-    // average reduce to "tangential arithmetic / normal harmonic")
+    // Node-centred eps/sigma per E component (§4.1/§4.2), 6 comps (xx,yy,zz,xy,xz,yz).
+    // IMPORTANT: material 1 and material 2 have DIFFERENT eps sources:
+    //   material 1: m_eps_mf (scalar, possibly a parser) or m_eps_tensor_mf
+    //   material 2: m_epsilon2 (constant scalar)         or m_eps2_tensor_mf
+    // m_eps_mf holds material 1 only, so reading it for a material-2 cell would give
+    // eps1 -- this was wrong in the SCALAR branch too, not only in the tensor one.
+    // Each side of the node gets a material from the sign of phi at the HALF-CELL
+    // MIDPOINT (z_n +- dz/4): a cell centre may lie on the other side of a
+    // non-grid-aligned interface, while the half-cell midpoint is what the node sees.
+    // sigma stays a single scalar field with the staircase rule (tangential: vacuum
+    // priority; normal: harmonic) and does not take part in the material selection.
+    bool const has_t1 = m_has_eps_tensor;
+    bool const has_t2 = m_has_eps2_tensor;
+    bool const tensor_mode = has_t1 || has_t2;
     auto const phi_n = (m_has_interface && m_interface_parser != nullptr)
         ? m_interface_parser->compile<3>() : amrex::ParserExecutor<3>{};
     bool const iface_on_n = (m_has_interface && m_interface_parser != nullptr);
@@ -362,80 +373,96 @@ MacroscopicProperties::InitData (
     amrex::Real const zlo_n = geom.ProbDomain().lo(AMREX_SPACEDIM-1);
     amrex::Real const dx_n = geom.CellSize(0);
     amrex::Real const dz_n = geom.CellSize(AMREX_SPACEDIM-1);
+    amrex::Real const eps2_sc = (m_epsilon2 > amrex::Real(0.0)) ? m_epsilon2 : m_epsilon;
     for (int c = 0; c < 3; ++c) {
         bool const normal = (c == 2);
         for (amrex::MFIter mfi(*m_eps_node[c]); mfi.isValid(); ++mfi) {
             amrex::Box const& b = mfi.validbox();
-            auto const ec = m_eps_mf->const_array(mfi);
-            auto const sc = m_sigma_mf->const_array(mfi);
-            auto const et = has_tensor_e ? m_eps_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+            auto const ec  = m_eps_mf->const_array(mfi);
+            auto const sc  = m_sigma_mf->const_array(mfi);
+            auto const et1 = has_t1 ? m_eps_tensor_mf->const_array(mfi)  : amrex::Array4<amrex::Real const>{};
+            auto const et2 = has_t2 ? m_eps2_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
             auto en = m_eps_node[c]->array(mfi);
             auto sn = m_sigma_node[c]->array(mfi);
-            // clamp to the cell-centred valid index range (node boxes are one wider)
             amrex::Box const cbox = m_eps_mf->boxArray()[mfi.index()];
             int const ilo = cbox.smallEnd(0), ihi = cbox.bigEnd(0);
             int const jlo_dom = geom.Domain().smallEnd(1);
             int const jhi_dom = geom.Domain().bigEnd(1);
             amrex::ParallelFor(b, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                 int const ii = amrex::min(amrex::max(i, ilo), ihi);
-                int const jm = amrex::max(j - 1, jlo_dom);   // ghost inside, boundary cell at the domain edge
-                int const jp = amrex::min(j, jhi_dom);   // node box is one wider than cell box
-                amrex::Real const eL = ec(ii, jm, k), eR = ec(ii, jp, k);
+                int const jm = amrex::max(j - 1, jlo_dom);
+                int const jp = amrex::min(j, jhi_dom);
                 amrex::Real const sL = sc(ii, jm, k), sR = sc(ii, jp, k);
-                // sigma is a SCALAR field, independent of whether eps is a tensor:
-                // use the same rule in both branches (otherwise tensor eps + sigma>0
-                // silently becomes lossless).
                 amrex::Real const sv = normal
                     ? ((sL + sR > amrex::Real(0.0)) ? amrex::Real(2.0)*sL*sR/(sL+sR) : amrex::Real(0.0))
                     : ((sL <= amrex::Real(0.0) || sR <= amrex::Real(0.0))
                         ? amrex::Real(0.0) : amrex::Real(0.5) * (sL + sR));
-                if (has_tensor_e) {
-                    if (!iface_on_n) {
-                        // no interface: the two cells hold the same tensor
-                        for (int q = 0; q < 6; ++q) { en(i,j,k,q) = et(ii,jp,k,q); }
-                    } else {
-                        // tau average (Kottke): eps_node = inv3_sym(chi_inv(epsL, epsR, 1/2, n))
-                        amrex::Real const xn = xlo_n + amrex::Real(i) * dx_n;
-                        amrex::Real const zn = zlo_n + amrex::Real(j) * dz_n;
-                        amrex::Real const hh = amrex::Real(0.5) * amrex::min(dx_n, dz_n);
-                        amrex::Real const gx = phi_n(xn + hh, amrex::Real(0.0), zn)
-                                             - phi_n(xn - hh, amrex::Real(0.0), zn);
-                        amrex::Real const gz = phi_n(xn, amrex::Real(0.0), zn + hh)
-                                             - phi_n(xn, amrex::Real(0.0), zn - hh);
-                        amrex::Real const gn = std::sqrt(gx*gx + gz*gz);
-                        amrex::Real nrm[3] = {amrex::Real(0.0), amrex::Real(0.0), amrex::Real(1.0)};
-                        if (gn > amrex::Real(1e-30)) { nrm[0] = gx/gn; nrm[2] = gz/gn; }
-                        warpx::subpixel::Mat3 e1{}, e2{};
-                        e1.m[0] = et(ii,jm,k,0); e1.m[4] = et(ii,jm,k,1); e1.m[8] = et(ii,jm,k,2);
-                        e1.m[1] = e1.m[3] = et(ii,jm,k,3);
-                        e1.m[2] = e1.m[6] = et(ii,jm,k,4);
-                        e1.m[5] = e1.m[7] = et(ii,jm,k,5);
-                        e2.m[0] = et(ii,jp,k,0); e2.m[4] = et(ii,jp,k,1); e2.m[8] = et(ii,jp,k,2);
-                        e2.m[1] = e2.m[3] = et(ii,jp,k,3);
-                        e2.m[2] = e2.m[6] = et(ii,jp,k,4);
-                        e2.m[5] = e2.m[7] = et(ii,jp,k,5);
-                        amrex::Real chi[9];
-                        warpx::subpixel::chi_inv_anisotropic(e1, e2, amrex::Real(0.5), nrm, chi);
-                        warpx::subpixel::Mat3 chim{};
-                        for (int q = 0; q < 9; ++q) { chim.m[q] = chi[q]; }
-                        warpx::subpixel::Mat3 const en3 = warpx::subpixel::inv3_sym(chim);
-                        en(i,j,k,0) = en3.m[0]; en(i,j,k,1) = en3.m[4]; en(i,j,k,2) = en3.m[8];
-                        en(i,j,k,3) = en3.m[1]; en(i,j,k,4) = en3.m[2]; en(i,j,k,5) = en3.m[5];
+                amrex::Real const xn = xlo_n + amrex::Real(i) * dx_n;
+                amrex::Real const zn = zlo_n + amrex::Real(j) * dz_n;
+                bool const m1L = iface_on_n ? (phi_n(xn, amrex::Real(0.0), zn - amrex::Real(0.25)*dz_n) > amrex::Real(0.0)) : true;
+                bool const m1R = iface_on_n ? (phi_n(xn, amrex::Real(0.0), zn + amrex::Real(0.25)*dz_n) > amrex::Real(0.0)) : true;
+                warpx::subpixel::Mat3 eL{}, eR{};
+                if (m1L) {
+                    if (has_t1) {
+                        eL.m[0]=et1(ii,jm,k,0); eL.m[4]=et1(ii,jm,k,1); eL.m[8]=et1(ii,jm,k,2);
+                        eL.m[1]=eL.m[3]=et1(ii,jm,k,3); eL.m[2]=eL.m[6]=et1(ii,jm,k,4); eL.m[5]=eL.m[7]=et1(ii,jm,k,5);
+                    } else { eL = warpx::subpixel::diag3(ec(ii,jm,k)); }
+                } else {
+                    if (has_t2) {
+                        eL.m[0]=et2(ii,jm,k,0); eL.m[4]=et2(ii,jm,k,1); eL.m[8]=et2(ii,jm,k,2);
+                        eL.m[1]=eL.m[3]=et2(ii,jm,k,3); eL.m[2]=eL.m[6]=et2(ii,jm,k,4); eL.m[5]=eL.m[7]=et2(ii,jm,k,5);
+                    } else { eL = warpx::subpixel::diag3(eps2_sc); }
+                }
+                if (m1R) {
+                    if (has_t1) {
+                        eR.m[0]=et1(ii,jp,k,0); eR.m[4]=et1(ii,jp,k,1); eR.m[8]=et1(ii,jp,k,2);
+                        eR.m[1]=eR.m[3]=et1(ii,jp,k,3); eR.m[2]=eR.m[6]=et1(ii,jp,k,4); eR.m[5]=eR.m[7]=et1(ii,jp,k,5);
+                    } else { eR = warpx::subpixel::diag3(ec(ii,jp,k)); }
+                } else {
+                    if (has_t2) {
+                        eR.m[0]=et2(ii,jp,k,0); eR.m[4]=et2(ii,jp,k,1); eR.m[8]=et2(ii,jp,k,2);
+                        eR.m[1]=eR.m[3]=et2(ii,jp,k,3); eR.m[2]=eR.m[6]=et2(ii,jp,k,4); eR.m[5]=eR.m[7]=et2(ii,jp,k,5);
+                    } else { eR = warpx::subpixel::diag3(eps2_sc); }
+                }
+                if (!tensor_mode) {
+                    amrex::Real const ev = normal
+                        ? ((eL(0,0) + eR(0,0) > amrex::Real(0.0))
+                            ? amrex::Real(2.0)*eL(0,0)*eR(0,0)/(eL(0,0)+eR(0,0)) : amrex::Real(0.0))
+                        : amrex::Real(0.5) * (eL(0,0) + eR(0,0));
+                    for (int q = 0; q < 3; ++q) { en(i,j,k,q) = ev; sn(i,j,k,q) = sv; }
+                    for (int q = 3; q < 6; ++q) { en(i,j,k,q) = amrex::Real(0.0); sn(i,j,k,q) = amrex::Real(0.0); }
+                } else if (!iface_on_n) {
+                    for (int q = 0; q < 6; ++q) {
+                        en(i,j,k,q) = m1L
+                            ? (has_t1 ? et1(ii,jp,k,q) : amrex::Real(0.0))
+                            : (has_t2 ? et2(ii,jp,k,q) : (q < 3 ? eps2_sc : amrex::Real(0.0)));
                     }
-                    // sigma stays a scalar field: staircase rule (tangential vacuum-priority,
-                    // normal harmonic), NOT a tau/arithmetic average
                     for (int q = 0; q < 3; ++q) { sn(i,j,k,q) = sv; }
                     for (int q = 3; q < 6; ++q) { sn(i,j,k,q) = amrex::Real(0.0); }
                 } else {
-                    amrex::Real const ev = normal
-                        ? ((eL + eR > amrex::Real(0.0)) ? amrex::Real(2.0)*eL*eR/(eL+eR) : amrex::Real(0.0))
-                        : amrex::Real(0.5) * (eL + eR);
-                    for (int q = 0; q < 3; ++q) { en(i,j,k,q) = ev; sn(i,j,k,q) = sv; }
-                    for (int q = 3; q < 6; ++q) { en(i,j,k,q) = amrex::Real(0.0); sn(i,j,k,q) = amrex::Real(0.0); }
+                    amrex::Real const hh = amrex::Real(0.5) * amrex::min(dx_n, dz_n);
+                    amrex::Real const gx = phi_n(xn + hh, amrex::Real(0.0), zn)
+                                         - phi_n(xn - hh, amrex::Real(0.0), zn);
+                    amrex::Real const gz = phi_n(xn, amrex::Real(0.0), zn + hh)
+                                         - phi_n(xn, amrex::Real(0.0), zn - hh);
+                    amrex::Real const gn = std::sqrt(gx*gx + gz*gz);
+                    amrex::Real nrm[3] = {amrex::Real(0.0), amrex::Real(0.0), amrex::Real(1.0)};
+                    if (gn > amrex::Real(1e-30)) { nrm[0] = gx/gn; nrm[2] = gz/gn; }
+                    amrex::Real chi[9];
+                    warpx::subpixel::chi_inv_anisotropic(eL, eR, amrex::Real(0.5), nrm, chi);
+                    warpx::subpixel::Mat3 chim{};
+                    for (int q = 0; q < 9; ++q) { chim.m[q] = chi[q]; }
+                    warpx::subpixel::Mat3 const en3 = warpx::subpixel::inv3_sym(chim);
+                    en(i,j,k,0) = en3.m[0]; en(i,j,k,1) = en3.m[4]; en(i,j,k,2) = en3.m[8];
+                    en(i,j,k,3) = en3.m[1]; en(i,j,k,4) = en3.m[2]; en(i,j,k,5) = en3.m[5];
+                    for (int q = 0; q < 3; ++q) { sn(i,j,k,q) = sv; }
+                    for (int q = 3; q < 6; ++q) { sn(i,j,k,q) = amrex::Real(0.0); }
                 }
             });
         }
     }
+
+
 
 
     // Fill the ghost cells once: the parser/constant init already wrote the analytic
