@@ -1,0 +1,69 @@
+# C2-0 / M2a-1a degeneracy check: ECT on a grid-aligned PEC plane.
+#
+# A PEC plane aligned with the grid (z = 0) produces no cut cells at all: every
+# mesh face is either fully open or fully covered, so the conformal geometry must
+# reduce to the staircase one. The reference run is inputs_yee_2d_degen.
+#
+# Status (2026-10-31, M2a-1b):
+#   * geometry criterion PASSES: Sx = {0, dz}, Sz = {0, dx}, Sy = {0, dx*dz}
+#     exactly, ly = {0, 1} exactly, no face is extended.
+#   * this pair is NOT a bitwise comparison target: an aligned surface still
+#     creates "touching" cut cells (volume fraction 1, but not flagged regular),
+#     and the staircase masking of the Yee solver closes them, losing one cell
+#     layer. ECT keeps them open, so ECT reflects off z = 0 whereas Yee reflects
+#     off z = -dz. Use verify_l2b.py to check the effective wall position, and
+#     inputs_{ect,yee}_2d_noeb + verify_l2a.py for the bitwise equivalence test
+#     on a regular domain.
+#
+# TE mode in 2D XZ: Ey (out of plane) + Bx, Bz (in plane). The pulse propagates
+# along +z and hits the plane head on, so a PEC-compatible solution exists.
+
+max_step = 200
+
+amr.n_cell = 64 64
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -8.0 -8.0
+geometry.prob_hi =  8.0  8.0
+
+warpx.cfl = 0.4
+algo.particle_shape = 1
+warpx.use_filter = 0
+
+boundary.field_lo = pec pec
+boundary.field_hi = pec pec
+
+# PEC half-space z < 0, aligned with the mesh (no cut cells).
+warpx.eb_implicit_function = "z"
+
+# Field-initialized TE pulse, propagating along +z, Bx = -Ey/c.
+# The envelope is negligible on the PEC plane (w = 0.6, zc = -5), so that the
+# initial condition is compatible with the conductor.
+my_constants.E0 = 1.0e6
+my_constants.zc = -5.0
+my_constants.w  = 0.6
+my_constants.kz = 2.0943951023931953
+my_constants.c  = 299792458.0
+warpx.E_ext_grid_init_style = parse_E_ext_grid_function
+warpx.B_ext_grid_init_style = parse_B_ext_grid_function
+warpx.Ex_external_grid_function(x,y,z) = "0"
+warpx.Ey_external_grid_function(x,y,z) = "E0*exp(-((z-zc)/w)^2)*cos(kz*z)"
+warpx.Ez_external_grid_function(x,y,z) = "0"
+warpx.Bx_external_grid_function(x,y,z) = "-E0*exp(-((z-zc)/w)^2)*cos(kz*z)/c"
+warpx.By_external_grid_function(x,y,z) = "0"
+warpx.Bz_external_grid_function(x,y,z) = "0"
+
+warpx.reduced_diags_names = fp1 fp2
+fp1.type = FieldProbe
+fp1.intervals = 1
+fp1.probe_geometry = Point
+fp1.x_probe = 0.0
+fp1.z_probe = -1.5
+fp2.type = FieldProbe
+fp2.intervals = 1
+fp2.probe_geometry = Point
+fp2.x_probe = 0.0
+fp2.z_probe = 1.5
+
+algo.maxwell_solver = ect

@@ -1,0 +1,58 @@
+# C2-0: PEC cut-cell baseline. Slanted PEC plane, plane-wave pulse, ECT solver.
+# Validate |r| = 1 and phase inversion (r = -1) on the cut-cell geometry.
+
+max_step = 1200
+stop_time = 60.0e-9
+
+amr.n_cell = 384 384
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -15.0 -15.0
+geometry.prob_hi =  15.0  15.0
+
+warpx.cfl = 0.4
+algo.maxwell_solver = yee
+algo.particle_shape = 1
+warpx.use_filter = 0
+
+boundary.field_lo = pml pml
+boundary.field_hi = pml pml
+
+# Slanted PEC plane: normal (cos a, sin a); PEC on the positive side.
+my_constants.alpha = 0.5235987756     # 30 degrees
+my_constants.x0 = 0.0
+my_constants.z0 = 0.0
+warpx.eb_implicit_function = "cos(alpha)*(x-x0) + sin(alpha)*(z-z0)"
+
+# Plane wave (wide Gaussian ~ plane wave), s-polarization (Ey out of plane).
+lasers.names = laser1
+laser1.position = 0. 0. -8.0
+laser1.direction = 0. 0. 1.
+laser1.polarization = 0. 1. 0.
+laser1.wavelength = 1.0
+laser1.profile = Gaussian
+laser1.profile_waist = 80.0
+laser1.profile_duration = 5.0e-9
+laser1.profile_t_peak = 3.0e-9
+laser1.profile_focal_distance = 0.0
+laser1.e_max = 1.0e6
+
+diagnostics.diags_names = diag1
+diag1.intervals = 200
+diag1.diag_type = Full
+diag1.fields_to_plot = Ex Ey Ez Bx By Bz
+diag1.write_species = 0
+
+# Point probes: one in the incident/reflected region, one behind the plane (should stay ~0).
+warpx.reduced_diags_names = fp_inc fp_shadow
+fp_inc.type = FieldProbe
+fp_inc.intervals = 5
+fp_inc.probe_geometry = Point
+fp_inc.x_probe = 0.0
+fp_inc.z_probe = -5.0
+fp_shadow.type = FieldProbe
+fp_shadow.intervals = 5
+fp_shadow.probe_geometry = Point
+fp_shadow.x_probe = 0.0
+fp_shadow.z_probe = 4.0

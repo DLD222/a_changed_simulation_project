@@ -1,0 +1,592 @@
+#################################
+####### GENERAL PARAMETERS ######
+#################################
+max_step             = 0
+amr.n_cell           = 8 8 8
+amr.max_grid_size    = 8
+amr.blocking_factor  = 8
+amr.max_level        = 0
+geometry.dims        = 3
+geometry.prob_lo     = -1.0 -1.0 -1.0
+geometry.prob_hi     =  1.0  1.0  1.0
+
+#################################
+####### Boundary Condition ######
+#################################
+boundary.field_lo = periodic periodic periodic
+boundary.field_hi = periodic periodic periodic
+
+#################################
+############ NUMERICS ###########
+#################################
+warpx.verbose = 1
+warpx.cfl     = 1.e-8
+warpx.use_filter = 0
+
+# Order of particle shape factors
+algo.particle_shape = 1
+
+#################################
+############ PLASMA #############
+#################################
+particles.species_names = gaussian maxwell_boltzmann maxwell_juttner maxwell_juttner_drift maxwell_juttner_low_theta beam maxwell_juttner_parser velocity_constant velocity_parser uniform gaussian_parser gaussian_momentum_from_file temperature_in_eV_constant gaussian_temperature_in_eV_from_file gaussian_parser_temperature_in_eV maxwell_juttner_read_from_file
+particles.rigid_injected_species = beam
+
+gaussian.charge                     = -q_e
+gaussian.mass                       = m_e
+gaussian.injection_style            = "NRandomPerCell"
+gaussian.num_particles_per_cell     = 1000
+gaussian.profile                    = constant
+gaussian.density                    = 1.0e21
+gaussian.momentum_distribution_type = "gaussian"
+gaussian.ux_th                      = 0.01
+gaussian.uy_th                      = 0.01
+gaussian.uz_th                      = 0.01
+
+maxwell_boltzmann.charge                     = -q_e
+maxwell_boltzmann.mass                       = m_e
+maxwell_boltzmann.injection_style            = "NRandomPerCell"
+maxwell_boltzmann.num_particles_per_cell     = 1000
+maxwell_boltzmann.profile                    = constant
+maxwell_boltzmann.density                    = 1.0e21
+maxwell_boltzmann.momentum_distribution_type = "maxwellian"
+maxwell_boltzmann.maxwellian_u_std_distribution_type= "constant"
+maxwell_boltzmann.ux_std = 0.00999950003749688
+maxwell_boltzmann.uy_std = 0.00999950003749688
+maxwell_boltzmann.uz_std = 0.00999950003749688
+maxwell_boltzmann.maxwellian_u_mean_distribution_type= "constant"
+maxwell_boltzmann.ux_mean = 0.0
+maxwell_boltzmann.uy_mean = 0.0
+maxwell_boltzmann.uz_mean = 0.0
+
+maxwell_juttner.charge                     = -q_e
+maxwell_juttner.mass                       = m_e
+maxwell_juttner.injection_style            = "NRandomPerCell"
+maxwell_juttner.num_particles_per_cell     = 1000
+maxwell_juttner.profile                    = constant
+maxwell_juttner.density                    = 1.0e21
+maxwell_juttner.momentum_distribution_type = "maxwell_juttner"
+maxwell_juttner.maxwell_juttner_temperature_in_eV_distribution_type = "constant"
+maxwell_juttner.temperature_in_eV          = m_e * clight**2 / q_e
+
+# Maxwell-Juttner with an asymmetric bulk drift (normalized momentum gamma*v/c).
+# ux_mean=0.5, uy_mean=0.3, uz_mean=0.1 gives |u_mean|^2=0.35, gamma_bulk=sqrt(1.35).
+# The drift is intentionally asymmetric (all three components non-zero) to verify that
+# each axis is read and applied correctly.
+maxwell_juttner_drift.charge                                 = -q_e
+maxwell_juttner_drift.mass                                   = m_e
+maxwell_juttner_drift.injection_style                        = "NRandomPerCell"
+maxwell_juttner_drift.num_particles_per_cell                 = 1000
+maxwell_juttner_drift.profile                                = constant
+maxwell_juttner_drift.density                                = 1.0e21
+maxwell_juttner_drift.momentum_distribution_type             = "maxwell_juttner"
+maxwell_juttner_drift.maxwell_juttner_temperature_in_eV_distribution_type = "constant"
+maxwell_juttner_drift.temperature_in_eV                      = m_e * clight**2 / q_e
+maxwell_juttner_drift.maxwell_juttner_u_mean_distribution_type = "constant"
+maxwell_juttner_drift.ux_mean                                = 0.5
+maxwell_juttner_drift.uy_mean                                = 0.3
+maxwell_juttner_drift.uz_mean                                = 0.1
+
+maxwell_juttner_low_theta.charge                     = -q_e
+maxwell_juttner_low_theta.mass                       = m_e
+maxwell_juttner_low_theta.injection_style            = "NRandomPerCell"
+maxwell_juttner_low_theta.num_particles_per_cell     = 1000
+maxwell_juttner_low_theta.profile                    = constant
+maxwell_juttner_low_theta.density                    = 1.0e21
+maxwell_juttner_low_theta.momentum_distribution_type = "maxwell_juttner"
+maxwell_juttner_low_theta.maxwell_juttner_temperature_in_eV_distribution_type = "constant"
+maxwell_juttner_low_theta.temperature_in_eV          = 0.05 * m_e * clight**2 / q_e
+
+beam.charge                     = -q_e
+beam.mass                       = m_e
+beam.injection_style            = "gaussian_beam"
+beam.x_rms                      = 0.25
+beam.y_rms                      = 0.25
+beam.z_rms                      = 0.25
+beam.z_cut                      = 2.
+beam.x_m                        = 0.0
+beam.y_m                        = 0.0
+beam.z_m                        = 0.0
+beam.npart                      = 512000
+beam.q_tot                      = -1.e-20
+beam.momentum_distribution_type = "gaussian"
+beam.ux_m                       = 0.0
+beam.uy_m                       = 0.0
+beam.uz_m                       = 0.0
+beam.ux_th                      = 1.0
+beam.uy_th                      = 1.0
+beam.uz_th                      = 1.0
+beam.zinject_plane              = 0.0
+beam.rigid_advance              = true
+
+maxwell_juttner_parser.charge                     = -q_e
+maxwell_juttner_parser.mass                       = m_e
+maxwell_juttner_parser.injection_style            = "NRandomPerCell"
+maxwell_juttner_parser.num_particles_per_cell     = 1000
+maxwell_juttner_parser.profile                    = constant
+maxwell_juttner_parser.density                    = 1.0e21
+maxwell_juttner_parser.momentum_distribution_type = "maxwell_juttner"
+maxwell_juttner_parser.maxwell_juttner_temperature_in_eV_distribution_type = "parser"
+maxwell_juttner_parser.temperature_in_eV_function(x,y,z) = "(1.0 + heaviside(x,0)) * m_e * clight**2 / q_e"
+
+maxwell_juttner_read_from_file.charge                     = -q_e
+maxwell_juttner_read_from_file.mass                       = m_e
+maxwell_juttner_read_from_file.injection_style            = "NRandomPerCell"
+maxwell_juttner_read_from_file.num_particles_per_cell     = 1000
+maxwell_juttner_read_from_file.profile                    = constant
+maxwell_juttner_read_from_file.density                    = 1.0e21
+maxwell_juttner_read_from_file.momentum_distribution_type = "maxwell_juttner"
+maxwell_juttner_read_from_file.maxwell_juttner_temperature_in_eV_distribution_type = "read_from_file"
+maxwell_juttner_read_from_file.read_temperature_in_eV_from_path = "../test_3d_initial_distribution_prepare/example-temperature-in-eV-MJ.h5"
+
+velocity_constant.charge                     = -q_e
+velocity_constant.mass                       = m_e
+velocity_constant.injection_style            = "NRandomPerCell"
+velocity_constant.num_particles_per_cell     = 1000
+velocity_constant.profile                    = constant
+velocity_constant.density                    = 1.0e21
+velocity_constant.momentum_distribution_type = "maxwellian"
+velocity_constant.maxwellian_u_std_distribution_type= "constant"
+velocity_constant.ux_std = 3.1622776601683795e-05
+velocity_constant.uy_std = 3.1622776601683795e-05
+velocity_constant.uz_std = 3.1622776601683795e-05
+velocity_constant.maxwellian_u_mean_distribution_type = "constant"
+velocity_constant.ux_mean =0
+velocity_constant.uy_mean = -0.20412414523193154
+velocity_constant.uz_mean =0
+
+temperature_in_eV_constant.charge                     = -q_e
+temperature_in_eV_constant.mass                       = m_e
+temperature_in_eV_constant.injection_style            = "NRandomPerCell"
+temperature_in_eV_constant.num_particles_per_cell     = 1000
+temperature_in_eV_constant.profile                    = constant
+temperature_in_eV_constant.density                    = 1.0e21
+temperature_in_eV_constant.momentum_distribution_type = "maxwellian"
+temperature_in_eV_constant.maxwellian_temperature_in_eV_distribution_type= "constant"
+temperature_in_eV_constant.temperature_in_eV = 0.0005109989506917532
+temperature_in_eV_constant.maxwellian_u_mean_distribution_type = "constant"
+temperature_in_eV_constant.ux_mean =0
+temperature_in_eV_constant.uy_mean = -0.20412414523193154
+temperature_in_eV_constant.uz_mean =0
+
+velocity_parser.charge                     = -q_e
+velocity_parser.mass                       = m_e
+velocity_parser.injection_style            = "NRandomPerCell"
+velocity_parser.num_particles_per_cell     = 1000
+velocity_parser.profile                    = constant
+velocity_parser.density                    = 1.0e21
+velocity_parser.momentum_distribution_type = "maxwellian"
+velocity_parser.maxwellian_u_std_distribution_type= "constant"
+velocity_parser.ux_std = 3.1622776601683795e-05
+velocity_parser.uy_std = 3.1622776601683795e-05
+velocity_parser.uz_std = 3.1622776601683795e-05
+velocity_parser.maxwellian_u_mean_distribution_type = "parser"
+velocity_parser.ux_mean_function(x,y,z) = "0"
+velocity_parser.uy_mean_function(x,y,z) ="(0.2 - 0.4 * heaviside(z,0)) / sqrt(1 - (0.2 - 0.4 * heaviside(z,0))^2)"
+velocity_parser.uz_mean_function(x,y,z)= "0"
+
+uniform.charge                     = q_e
+uniform.mass                       = m_e
+uniform.injection_style            = "NRandomPerCell"
+uniform.num_particles_per_cell     = 1000
+uniform.profile                    = constant
+uniform.density                    = 1.0e21
+uniform.momentum_distribution_type = "uniform"
+uniform.ux_min                     = -0.2
+uniform.ux_max                     = 0.3
+uniform.uy_min                     = -0.1
+uniform.uy_max                     = 0.1
+uniform.uz_min                     = 10
+uniform.uz_max                     = 11.2
+
+gaussian_parser.charge                     = -q_e
+gaussian_parser.mass                       = m_e
+gaussian_parser.injection_style            = "NRandomPerCell"
+gaussian_parser.num_particles_per_cell     = 1000
+gaussian_parser.profile                    = constant
+gaussian_parser.density                    = 1.0e21
+gaussian_parser.momentum_distribution_type = "maxwellian"
+gaussian_parser.maxwellian_u_mean_distribution_type= "parser"
+gaussian_parser.ux_mean_function(x,y,z) = "0.1*z"
+gaussian_parser.uy_mean_function(x,y,z) = "0.12*z"
+gaussian_parser.uz_mean_function(x,y,z) = "0.14*z"
+gaussian_parser.maxwellian_u_std_distribution_type= "parser"
+gaussian_parser.ux_std_function(x,y,z) = "0.2*abs(z)"
+gaussian_parser.uy_std_function(x,y,z) = "0.21*abs(z)"
+gaussian_parser.uz_std_function(x,y,z) = "0.22*abs(z)"
+
+gaussian_momentum_from_file.charge                     = -q_e
+gaussian_momentum_from_file.mass                       = m_e
+gaussian_momentum_from_file.injection_style            = "NRandomPerCell"
+gaussian_momentum_from_file.num_particles_per_cell     = 1000
+gaussian_momentum_from_file.profile                    = constant
+gaussian_momentum_from_file.density                    = 1.0e21
+gaussian_momentum_from_file.momentum_distribution_type = "maxwellian"
+gaussian_momentum_from_file.maxwellian_u_mean_distribution_type = "read_from_file"
+gaussian_momentum_from_file.read_u_mean_from_path = "../test_3d_initial_distribution_prepare/example-u-mean.h5"
+gaussian_momentum_from_file.maxwellian_u_std_distribution_type = "read_from_file"
+gaussian_momentum_from_file.read_u_std_from_path = "../test_3d_initial_distribution_prepare/example-u-std.h5"
+
+gaussian_temperature_in_eV_from_file.charge                     = -q_e
+gaussian_temperature_in_eV_from_file.mass                       = m_e
+gaussian_temperature_in_eV_from_file.injection_style            = "NRandomPerCell"
+gaussian_temperature_in_eV_from_file.num_particles_per_cell     = 1000
+gaussian_temperature_in_eV_from_file.profile                    = constant
+gaussian_temperature_in_eV_from_file.density                    = 1.0e21
+gaussian_temperature_in_eV_from_file.momentum_distribution_type = "maxwellian"
+gaussian_temperature_in_eV_from_file.maxwellian_u_mean_distribution_type = "read_from_file"
+gaussian_temperature_in_eV_from_file.read_u_mean_from_path = "../test_3d_initial_distribution_prepare/example-u-mean.h5"
+gaussian_temperature_in_eV_from_file.maxwellian_temperature_in_eV_distribution_type = "read_from_file"
+gaussian_temperature_in_eV_from_file.read_temperature_in_eV_from_path = "../test_3d_initial_distribution_prepare/example-temperature-in-eV.h5"
+
+gaussian_parser_temperature_in_eV.charge                     = -q_e
+gaussian_parser_temperature_in_eV.mass                       = m_e
+gaussian_parser_temperature_in_eV.injection_style            = "NRandomPerCell"
+gaussian_parser_temperature_in_eV.num_particles_per_cell     = 1000
+gaussian_parser_temperature_in_eV.profile                    = constant
+gaussian_parser_temperature_in_eV.density                    = 1.0e21
+gaussian_parser_temperature_in_eV.momentum_distribution_type = "maxwellian"
+gaussian_parser_temperature_in_eV.maxwellian_u_mean_distribution_type= "parser"
+gaussian_parser_temperature_in_eV.ux_mean_function(x,y,z) = "0.1*z"
+gaussian_parser_temperature_in_eV.uy_mean_function(x,y,z) = "0.12*z"
+gaussian_parser_temperature_in_eV.uz_mean_function(x,y,z) = "0.14*z"
+gaussian_parser_temperature_in_eV.maxwellian_temperature_in_eV_distribution_type= "parser"
+gaussian_parser_temperature_in_eV.temperature_in_eV_function(x,y,z) = "20439.958027670127 * z**2"
+
+#################################
+########## DIAGNOSTIC ###########
+#################################
+# 1 for gaussian
+# 2 for maxwellian with constant temperature
+# 3 for maxwell-juttner with constant temperature
+# 4 for beam
+# 5 for maxwell-juttner with parser function temperature
+# 6 for maxwellian with constant velocity
+# 7 for maxwellian with parser velocity
+# 8 for cuboid in momentum space
+# 10 for maxwell-juttner with low theta (Gaussian fallback)
+# 11 for maxwell-juttner with constant diagonal bulk drift
+# 12 for maxwellian with mean and standard deviation from openPMD files
+# 13 for maxwellian with parser mean and parser temperature in eV
+# 14 for maxwell-juttner with temperature in eV read from file
+
+warpx.reduced_diags_names              = h1x h1y h1z h2x h2y h2z h3 h3_filtered h4x h4y h4z bmmntr h5_neg h5_pos h6 h6uy h7 h7uy_pos h7uy_neg h8x h8y h8z h9x h9y h9z h10 h11 h12 h12uy h13x h13y h13z h14_neg h14_pos
+
+h1x.type                                 = ParticleHistogram
+h1x.intervals                            = 1
+h1x.path                                 = "./"
+h1x.species                              = gaussian
+h1x.bin_number                           = 50
+h1x.bin_min                              = -4.0e-2
+h1x.bin_max                              = +4.0e-2
+h1x.histogram_function(t,x,y,z,ux,uy,uz) = "ux"
+
+h1y.type                                 = ParticleHistogram
+h1y.intervals                            = 1
+h1y.path                                 = "./"
+h1y.species                              = gaussian
+h1y.bin_number                           = 50
+h1y.bin_min                              = -4.0e-2
+h1y.bin_max                              = +4.0e-2
+h1y.histogram_function(t,x,y,z,ux,uy,uz) = "uy"
+
+h1z.type                                 = ParticleHistogram
+h1z.intervals                            = 1
+h1z.path                                 = "./"
+h1z.species                              = gaussian
+h1z.bin_number                           = 50
+h1z.bin_min                              = -4.0e-2
+h1z.bin_max                              = +4.0e-2
+h1z.histogram_function(t,x,y,z,ux,uy,uz) = "uz"
+
+h2x.type                                 = ParticleHistogram
+h2x.intervals                            = 1
+h2x.path                                 = "./"
+h2x.species                              = maxwell_boltzmann
+h2x.bin_number                           = 50
+h2x.bin_min                              = -4.0e-2
+h2x.bin_max                              = +4.0e-2
+h2x.histogram_function(t,x,y,z,ux,uy,uz) = "ux"
+
+h2y.type                                 = ParticleHistogram
+h2y.intervals                            = 1
+h2y.path                                 = "./"
+h2y.species                              = maxwell_boltzmann
+h2y.bin_number                           = 50
+h2y.bin_min                              = -4.0e-2
+h2y.bin_max                              = +4.0e-2
+h2y.histogram_function(t,x,y,z,ux,uy,uz) = "uy"
+
+h2z.type                                 = ParticleHistogram
+h2z.intervals                            = 1
+h2z.path                                 = "./"
+h2z.species                              = maxwell_boltzmann
+h2z.bin_number                           = 50
+h2z.bin_min                              = -4.0e-2
+h2z.bin_max                              = +4.0e-2
+h2z.histogram_function(t,x,y,z,ux,uy,uz) = "uz"
+
+h3.type                                  = ParticleHistogram
+h3.intervals                             = 1
+h3.path                                  = "./"
+h3.species                               = maxwell_juttner
+h3.bin_number                            = 50
+h3.bin_min                               = 1.0
+h3.bin_max                               = 12.0
+h3.histogram_function(t,x,y,z,ux,uy,uz)  = "sqrt(1.0+(ux*ux+uy*uy+uz*uz))"
+
+h3_filtered.type                                  = ParticleHistogram
+h3_filtered.intervals                             = 1
+h3_filtered.path                                  = "./"
+h3_filtered.species                               = maxwell_juttner
+h3_filtered.bin_number                            = 50
+h3_filtered.bin_min                               = 1.0
+h3_filtered.bin_max                               = 12.0
+h3_filtered.histogram_function(t,x,y,z,ux,uy,uz)  = "sqrt(1.0+(ux*ux+uy*uy+uz*uz))"
+h3_filtered.filter_function(t,x,y,z,ux,uy,uz)     = "sqrt(1.0+(ux*ux+uy*uy+uz*uz)) > 5.5"
+
+h4x.type                                 = ParticleHistogram
+h4x.intervals                            = 1
+h4x.path                                 = "./"
+h4x.species                              = beam
+h4x.bin_number                           = 50
+h4x.bin_min                              = -1.0
+h4x.bin_max                              = +1.0
+h4x.histogram_function(t,x,y,z,ux,uy,uz) = "x"
+
+h4y.type                                 = ParticleHistogram
+h4y.intervals                            = 1
+h4y.path                                 = "./"
+h4y.species                              = beam
+h4y.bin_number                           = 50
+h4y.bin_min                              = -1.0
+h4y.bin_max                              = +1.0
+h4y.histogram_function(t,x,y,z,ux,uy,uz) = "y"
+
+h4z.type                                 = ParticleHistogram
+h4z.intervals                            = 1
+h4z.path                                 = "./"
+h4z.species                              = beam
+h4z.bin_number                           = 50
+h4z.bin_min                              = -1.0
+h4z.bin_max                              = +1.0
+h4z.histogram_function(t,x,y,z,ux,uy,uz) = "z"
+
+h5_neg.type                                 = ParticleHistogram
+h5_neg.intervals                            = 1
+h5_neg.path                                 = "./"
+h5_neg.species                              = maxwell_juttner_parser
+h5_neg.bin_number                           = 50
+h5_neg.bin_min                              = 1.0
+h5_neg.bin_max                              = 12.0
+h5_neg.histogram_function(t,x,y,z,ux,uy,uz) = "sqrt(1.0 + ux*ux + uy*uy + uz*uz)"
+h5_neg.filter_function(t,x,y,z,ux,uy,uz)    = "x < 0.0"
+
+h5_pos.type                                 = ParticleHistogram
+h5_pos.intervals                            = 1
+h5_pos.path                                 = "./"
+h5_pos.species                              = maxwell_juttner_parser
+h5_pos.bin_number                           = 50
+h5_pos.bin_min                              = 1.0
+h5_pos.bin_max                              = 12.0
+h5_pos.histogram_function(t,x,y,z,ux,uy,uz) = "sqrt(1.0 + ux*ux + uy*uy + uz*uz)"
+h5_pos.filter_function(t,x,y,z,ux,uy,uz)    = "x > 0.0"
+
+h10.type                                  = ParticleHistogram
+h10.intervals                             = 1
+h10.path                                  = "./"
+h10.species                               = maxwell_juttner_low_theta
+h10.bin_number                            = 50
+h10.bin_min                               = 1.0
+h10.bin_max                               = 1.5
+h10.histogram_function(t,x,y,z,ux,uy,uz)  = "sqrt(1.0 + ux*ux + uy*uy + uz*uz)"
+
+h6.type                                   = ParticleHistogram
+h6.intervals                              = 1
+h6.path                                   = "./"
+h6.species                                = velocity_constant
+h6.bin_number                             = 50
+h6.bin_min                                = 1.0
+h6.bin_max                                = 1.2
+h6.histogram_function(t,x,y,z,ux,uy,uz)   = "sqrt(1.0 + ux*ux + uy*uy + uz*uz)"
+
+h6uy.type                                   = ParticleHistogram
+h6uy.intervals                              = 1
+h6uy.path                                   = "./"
+h6uy.species                                = velocity_constant
+h6uy.bin_number                             = 50
+h6uy.bin_min                                = -1.0
+h6uy.bin_max                                = 1.0
+h6uy.histogram_function(t,x,y,z,ux,uy,uz)   = "uy"
+
+h7.type                                   = ParticleHistogram
+h7.intervals                              = 1
+h7.path                                   = "./"
+h7.species                                = velocity_parser
+h7.bin_number                             = 50
+h7.bin_min                                = 1.0
+h7.bin_max                                = 1.2
+h7.histogram_function(t,x,y,z,ux,uy,uz)   = "sqrt(1.0 + ux*ux + uy*uy + uz*uz)"
+
+h7uy_pos.type                                 = ParticleHistogram
+h7uy_pos.intervals                            = 1
+h7uy_pos.path                                 = "./"
+h7uy_pos.species                              = velocity_parser
+h7uy_pos.bin_number                           = 50
+h7uy_pos.bin_min                              = -1.0
+h7uy_pos.bin_max                              = 1.0
+h7uy_pos.histogram_function(t,x,y,z,ux,uy,uz) = "uy"
+h7uy_pos.filter_function(t,x,y,z,ux,uy,uz)    = "z > 0.0"
+
+h7uy_neg.type                                 = ParticleHistogram
+h7uy_neg.intervals                            = 1
+h7uy_neg.path                                 = "./"
+h7uy_neg.species                              = velocity_parser
+h7uy_neg.bin_number                           = 50
+h7uy_neg.bin_min                              = -1.0
+h7uy_neg.bin_max                              = 1.0
+h7uy_neg.histogram_function(t,x,y,z,ux,uy,uz) = "uy"
+h7uy_neg.filter_function(t,x,y,z,ux,uy,uz)    = "z < 0.0"
+
+h8x.type                                 = ParticleHistogram
+h8x.intervals                            = 1
+h8x.path                                 = "./"
+h8x.species                              = uniform
+h8x.bin_number                           = 50
+h8x.bin_min                              = -1
+h8x.bin_max                              = 1
+h8x.histogram_function(t,x,y,z,ux,uy,uz) = "ux"
+
+h8y.type                                 = ParticleHistogram
+h8y.intervals                            = 1
+h8y.path                                 = "./"
+h8y.species                              = uniform
+h8y.bin_number                           = 50
+h8y.bin_min                              = -1
+h8y.bin_max                              = 1
+h8y.histogram_function(t,x,y,z,ux,uy,uz) = "uy"
+
+h8z.type                                 = ParticleHistogram
+h8z.intervals                            = 1
+h8z.path                                 = "./"
+h8z.species                              = uniform
+h8z.bin_number                           = 200
+h8z.bin_min                              = 0
+h8z.bin_max                              = 15
+h8z.histogram_function(t,x,y,z,ux,uy,uz) = "uz"
+
+h9x.type                                 = ParticleHistogram
+h9x.intervals                            = 1
+h9x.path                                 = "./"
+h9x.species                              = gaussian_parser
+h9x.bin_number                           = 50
+h9x.bin_min                              = -1
+h9x.bin_max                              = 1
+h9x.histogram_function(t,x,y,z,ux,uy,uz) = "ux/z"
+
+h9y.type                                 = ParticleHistogram
+h9y.intervals                            = 1
+h9y.path                                 = "./"
+h9y.species                              = gaussian_parser
+h9y.bin_number                           = 50
+h9y.bin_min                              = -1
+h9y.bin_max                              = 1
+h9y.histogram_function(t,x,y,z,ux,uy,uz) = "uy/z"
+
+h9z.type                                 = ParticleHistogram
+h9z.intervals                            = 1
+h9z.path                                 = "./"
+h9z.species                              = gaussian_parser
+h9z.bin_number                           = 50
+h9z.bin_min                              = -1
+h9z.bin_max                              = 1
+h9z.histogram_function(t,x,y,z,ux,uy,uz) = "uz/z"
+
+# Maxwell-Juttner with asymmetric bulk drift: histogram the drift-frame Lorentz factor
+# gamma' = gamma_bulk*gamma - u_mean.u, which must follow the rest-frame MJ(theta=1).
+# u_mean = (0.5, 0.3, 0.1), gamma_bulk = sqrt(1 + 0.5^2 + 0.3^2 + 0.1^2) = sqrt(1.35).
+h11.type                                 = ParticleHistogram
+h11.intervals                            = 1
+h11.path                                 = "./"
+h11.species                              = maxwell_juttner_drift
+h11.bin_number                           = 50
+h11.bin_min                              = 1.0
+h11.bin_max                              = 12.0
+h11.histogram_function(t,x,y,z,ux,uy,uz) = "1.161895003862225*sqrt(1.0 + ux*ux + uy*uy + uz*uz) - 0.5*ux - 0.3*uy - 0.1*uz"
+
+h12.type                                   = ParticleHistogram
+h12.intervals                              = 1
+h12.path                                   = "./"
+h12.species                                = temperature_in_eV_constant
+h12.bin_number                             = 50
+h12.bin_min                                = 1.0
+h12.bin_max                                = 1.2
+h12.histogram_function(t,x,y,z,ux,uy,uz)   = "sqrt(1.0 + ux*ux + uy*uy + uz*uz)"
+
+h12uy.type                                   = ParticleHistogram
+h12uy.intervals                              = 1
+h12uy.path                                   = "./"
+h12uy.species                                = temperature_in_eV_constant
+h12uy.bin_number                             = 50
+h12uy.bin_min                                = -1.0
+h12uy.bin_max                                = 1.0
+h12uy.histogram_function(t,x,y,z,ux,uy,uz)   = "uy"
+
+h13x.type                                 = ParticleHistogram
+h13x.intervals                            = 1
+h13x.path                                 = "./"
+h13x.species                              = gaussian_parser_temperature_in_eV
+h13x.bin_number                           = 50
+h13x.bin_min                              = -1
+h13x.bin_max                              = 1
+h13x.histogram_function(t,x,y,z,ux,uy,uz) = "ux/z"
+
+h13y.type                                 = ParticleHistogram
+h13y.intervals                            = 1
+h13y.path                                 = "./"
+h13y.species                              = gaussian_parser_temperature_in_eV
+h13y.bin_number                           = 50
+h13y.bin_min                              = -1
+h13y.bin_max                              = 1
+h13y.histogram_function(t,x,y,z,ux,uy,uz) = "uy/z"
+
+h13z.type                                 = ParticleHistogram
+h13z.intervals                            = 1
+h13z.path                                 = "./"
+h13z.species                              = gaussian_parser_temperature_in_eV
+h13z.bin_number                           = 50
+h13z.bin_min                              = -1
+h13z.bin_max                              = 1
+h13z.histogram_function(t,x,y,z,ux,uy,uz) = "uz/z"
+
+h14_neg.type                                 = ParticleHistogram
+h14_neg.intervals                            = 1
+h14_neg.path                                 = "./"
+h14_neg.species                              = maxwell_juttner_read_from_file
+h14_neg.bin_number                           = 50
+h14_neg.bin_min                              = 1.0
+h14_neg.bin_max                              = 12.0
+h14_neg.histogram_function(t,x,y,z,ux,uy,uz) = "sqrt(1.0 + ux*ux + uy*uy + uz*uz)"
+h14_neg.filter_function(t,x,y,z,ux,uy,uz)    = "x < 0.0"
+
+h14_pos.type                                 = ParticleHistogram
+h14_pos.intervals                            = 1
+h14_pos.path                                 = "./"
+h14_pos.species                              = maxwell_juttner_read_from_file
+h14_pos.bin_number                           = 50
+h14_pos.bin_min                              = 1.0
+h14_pos.bin_max                              = 12.0
+h14_pos.histogram_function(t,x,y,z,ux,uy,uz) = "sqrt(1.0 + ux*ux + uy*uy + uz*uz)"
+h14_pos.filter_function(t,x,y,z,ux,uy,uz)    = "x > 0.0"
+
+# our little beam monitor
+bmmntr.type                              = BeamRelevant
+bmmntr.intervals                         = 1
+bmmntr.path                              = "./"
+bmmntr.species                           = beam
+
+# Diagnostics
+diagnostics.diags_names = diag1
+diag1.intervals = 1000
+diag1.diag_type = Full
+diag1.format = openpmd

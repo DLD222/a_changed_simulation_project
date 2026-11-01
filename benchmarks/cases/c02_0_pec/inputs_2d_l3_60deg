@@ -1,0 +1,116 @@
+# C2-0 / L3: 30-degree PEC plane, reflection-coefficient criterion.
+#
+# Geometry: eb = cos(alpha)*(x-x0) + sin(alpha)*(z-z0), alpha = 30 deg, so the
+# plane normal is n = (cos 30, sin 30) = (0.8660254, 0.5) and the PEC occupies the
+# positive side. The incident pulse travels along +z (Ey out of plane, Bx = -Ey/c).
+#
+# Specular reflection:  k_r = k_i - 2 (k_i.n) n  ->  k_r_hat = (-0.8660254, 0, 0.5)
+# i.e. the reflected beam leaves the plane under the same angle, heading towards
+# -x / +z. The probes below sit exactly ON that beam, at arc length s = 5 m and
+# s = 7 m from the specular point (0, 0), so that
+#
+#     t_ref(s) = (z_W + 8)/c + s/c        with W = (0,0)  ->  t_ref = (8+s)/c
+#     t_inc(s) = (z_P + 8)/c
+#
+# For s = 5: t_inc = 35.05 ns, t_ref = 43.36 ns   (separation 8.3 ns, pulse ~3 ns)
+# For s = 7: t_inc = 38.44 ns, t_ref = 50.03 ns   (separation 11.6 ns)
+#
+# fp_inc stays at (0,-5) exactly as in the old runs (t_inc = 10.01 ns).
+# fp_shadow (0, +4) is inside the PEC and must remain ~0.
+#
+# Old inputs_2d put its "reflection" probe at (0, +4), which is inside the
+# conductor and NOT on the reflected beam - the r = -0.531 reported there was
+# meaningless. This input replaces it.
+
+max_step = 800
+stop_time = 80.0e-9
+
+amr.n_cell = 384 384
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -15.0 -15.0
+geometry.prob_hi =  15.0  15.0
+
+warpx.cfl = 0.4
+algo.maxwell_solver = ect
+algo.particle_shape = 1
+warpx.use_filter = 0
+
+boundary.field_lo = pml pml
+boundary.field_hi = pml pml
+
+my_constants.alpha = 1.0471975511965976     # 60 degrees
+my_constants.x0 = 0.0
+my_constants.z0 = 0.0
+warpx.eb_implicit_function = "cos(alpha)*(x-x0) + sin(alpha)*(z-z0)"
+
+my_constants.E0 = 1.0e6
+my_constants.zc = -8.0
+my_constants.w = 1.5
+my_constants.c = 299792458.0
+warpx.E_ext_grid_init_style = parse_E_ext_grid_function
+warpx.B_ext_grid_init_style = parse_B_ext_grid_function
+warpx.Ex_external_grid_function(x,y,z) = "0"
+warpx.Ey_external_grid_function(x,y,z) = "E0*exp(-((z-zc)/w)^2)"
+warpx.Ez_external_grid_function(x,y,z) = "0"
+warpx.Bx_external_grid_function(x,y,z) = "-E0*exp(-((z-zc)/w)^2)/c"
+warpx.By_external_grid_function(x,y,z) = "0"
+warpx.Bz_external_grid_function(x,y,z) = "0"
+
+# Auto-generated from inputs_2d_l3 for alpha = 60 deg (see make_l3_angle.py).
+warpx.reduced_diags_names = fp_inc fp_shadow fp_ref3 fp_ref4 fp_ref5 fp_ref6 fp_ref7 fp_ref8
+fp_inc.type = FieldProbe
+fp_inc.intervals = 2
+fp_inc.probe_geometry = Point
+fp_inc.x_probe = 0.0
+fp_inc.z_probe = -5.0
+
+# Reflected beam, s = 3 m: k_r_hat = (-0.866025, -0.500000)
+fp_ref3.type = FieldProbe
+fp_ref3.intervals = 2
+fp_ref3.probe_geometry = Point
+fp_ref3.x_probe = -2.598076211353316
+fp_ref3.z_probe = -1.4999999999999993
+
+# Reflected beam, s = 4 m: k_r_hat = (-0.866025, -0.500000)
+fp_ref4.type = FieldProbe
+fp_ref4.intervals = 2
+fp_ref4.probe_geometry = Point
+fp_ref4.x_probe = -3.464101615137755
+fp_ref4.z_probe = -1.9999999999999991
+
+# Reflected beam, s = 5 m: k_r_hat = (-0.866025, -0.500000)
+fp_ref5.type = FieldProbe
+fp_ref5.intervals = 2
+fp_ref5.probe_geometry = Point
+fp_ref5.x_probe = -4.330127018922194
+fp_ref5.z_probe = -2.499999999999999
+
+# Reflected beam, s = 6 m: k_r_hat = (-0.866025, -0.500000)
+fp_ref6.type = FieldProbe
+fp_ref6.intervals = 2
+fp_ref6.probe_geometry = Point
+fp_ref6.x_probe = -5.196152422706632
+fp_ref6.z_probe = -2.9999999999999987
+
+# Reflected beam, s = 7 m: k_r_hat = (-0.866025, -0.500000)
+fp_ref7.type = FieldProbe
+fp_ref7.intervals = 2
+fp_ref7.probe_geometry = Point
+fp_ref7.x_probe = -6.062177826491071
+fp_ref7.z_probe = -3.4999999999999982
+
+# Reflected beam, s = 8 m: k_r_hat = (-0.866025, -0.500000)
+fp_ref8.type = FieldProbe
+fp_ref8.intervals = 2
+fp_ref8.probe_geometry = Point
+fp_ref8.x_probe = -6.92820323027551
+fp_ref8.z_probe = -3.9999999999999982
+
+# Inside the conductor: must stay zero.
+fp_shadow.type = FieldProbe
+fp_shadow.intervals = 2
+fp_shadow.probe_geometry = Point
+fp_shadow.x_probe = 0.0
+fp_shadow.z_probe = 4.0

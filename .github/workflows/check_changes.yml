@@ -1,0 +1,30 @@
+name: Check Changes
+
+on:
+  workflow_call:
+    outputs:
+      has_non_docs_changes:
+        value: ${{ jobs.check.outputs.has_non_docs_changes }}
+
+jobs:
+  check:
+    name: Check changes
+    runs-on: ubuntu-latest
+    outputs:
+      has_non_docs_changes: ${{ steps.set-output.outputs.has_non_docs_changes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: changes
+        with:
+          filters: |
+            non_docs:
+              - '!.zenodo.json'
+              - '!Docs/**'
+              - '!Tools/machines/**'
+              - '!**/*.rst'
+              - '!**/*.md'
+          predicate-quantifier: 'every'
+      - id: set-output
+        run: |
+          echo "has_non_docs_changes=${{ steps.changes.outputs.non_docs }}" >> $GITHUB_OUTPUT

@@ -1,0 +1,132 @@
+# Copyright 2021-2021 Neil Zaim
+#
+# This file is part of WarpX.
+#
+# License: BSD-3-Clause-LBNL
+
+## This file contains functions that are used in multiple CI analysis scripts.
+
+import numpy as np
+import yt
+
+
+## This is a generic function to test a particle filter. We reproduce the filter in python and
+## verify that the results are the same as with the WarpX filtered diagnostic.
+def check_particle_filter(
+    fn, filtered_fn, filter_expression, dim, species_name, skip_component=None
+):
+    ds = yt.load(fn)
+    ds_filtered = yt.load(filtered_fn)
+    ad = ds.all_data()
+    ad_filtered = ds_filtered.all_data()
+
+    ## Build the mapping from local variable names to yt field names, based on dimensionality.
+    components = {
+        "px": "particle_momentum_x",
+        "py": "particle_momentum_y",
+        "pz": "particle_momentum_z",
+        "w": "particle_weight",
+    }
+    if dim == "2d":
+        components["x"] = "particle_position_x"
+        components["z"] = "particle_position_y"
+    elif dim == "3d":
+        components["x"] = "particle_position_x"
+        components["y"] = "particle_position_y"
+        components["z"] = "particle_position_z"
+    elif dim == "rz":
+        components["r"] = "particle_position_x"
+        components["z"] = "particle_position_y"
+        components["theta"] = "particle_theta"
+
+    if skip_component is not None:
+        components = {k: v for k, v in components.items() if v != skip_component}
+
+    ## Load arrays from the unfiltered diagnostic
+    ids = ad[species_name, "particle_id"].to_ndarray()
+    cpus = ad[species_name, "particle_cpu"].to_ndarray()
+    data = {k: ad[species_name, v].to_ndarray() for k, v in components.items()}
+
+    ## Load arrays from the filtered diagnostic
+    ids_filtered_warpx = ad_filtered[species_name, "particle_id"].to_ndarray()
+    cpus_filtered_warpx = ad_filtered[species_name, "particle_cpu"].to_ndarray()
+    data_filtered = {
+        k: ad_filtered[species_name, v].to_ndarray() for k, v in components.items()
+    }
+
+    ## Reproduce the filter in python: this returns the indices of the filtered particles in the
+    ## unfiltered arrays.
+    eval_ns = {
+        "np": np,
+        "ids": ids,
+        "cpus": cpus,
+        "ids_filtered_warpx": ids_filtered_warpx,
+        "cpus_filtered_warpx": cpus_filtered_warpx,
+        **data,
+    }
+    (ind_filtered_python,) = np.where(eval(filter_expression, eval_ns))
+
+    ## Sort the indices of the filtered arrays by particle id.
+    sorted_ind_filtered_python = ind_filtered_python[
+        np.argsort(ids[ind_filtered_python])
+    ]
+    sorted_ind_filtered_warpx = np.argsort(ids_filtered_warpx)
+
+    ## Check that the sorted ids are exactly the same with the warpx filter and the filter
+    ## reproduced in python
+    assert np.array_equal(
+        ids[sorted_ind_filtered_python], ids_filtered_warpx[sorted_ind_filtered_warpx]
+    )
+    assert np.array_equal(
+        cpus[sorted_ind_filtered_python], cpus_filtered_warpx[sorted_ind_filtered_warpx]
+    )
+
+    ## Finally, we check that the sum of the particles quantities are the same to machine precision
+    tolerance_checksum = 1.0e-12
+    for k in components:
+        check_array_sum(
+            data[k][sorted_ind_filtered_python],
+            data_filtered[k][sorted_ind_filtered_warpx],
+            tolerance_checksum,
+        )
+
+
+## This function checks that the absolute sums of two arrays are the same to a required precision
+def check_array_sum(array1, array2, tolerance_checksum):
+    sum1 = np.sum(np.abs(array1))
+    sum2 = np.sum(np.abs(array2))
+    assert abs(sum2 - sum1) / sum1 < tolerance_checksum
+
+
+## This function is specifically used to test the random filter. First, we check that the number of
+## dumped particles is as expected. Next, we call the generic check_particle_filter function.
+def check_random_filter(
+    fn, filtered_fn, random_fraction, dim, species_name, skip_component=None
+):
+    ds = yt.load(fn)
+    ds_filtered = yt.load(filtered_fn)
+    ad = ds.all_data()
+    ad_filtered = ds_filtered.all_data()
+
+    ## Check that the number of particles is as expected
+    numparts = ad[species_name, "particle_id"].to_ndarray().shape[0]
+    numparts_filtered = ad_filtered["particle_id"].to_ndarray().shape[0]
+    expected_numparts_filtered = random_fraction * numparts
+    # 5 sigma test that has an intrinsic probability to fail of 1 over ~2 millions
+    std_numparts_filtered = np.sqrt(expected_numparts_filtered)
+    error = abs(numparts_filtered - expected_numparts_filtered)
+    print(
+        "Random filter: difference between expected and actual number of dumped particles: "
+        + str(error)
+    )
+    print("tolerance: " + str(5 * std_numparts_filtered))
+    assert error < 5 * std_numparts_filtered
+
+    ## Dirty trick to find particles with the same ID + same CPU (does not work with more than 10
+    ## MPI ranks)
+    random_filter_expression = (
+        "np.isin(ids + 0.1*cpus,ids_filtered_warpx + 0.1*cpus_filtered_warpx)"
+    )
+    check_particle_filter(
+        fn, filtered_fn, random_filter_expression, dim, species_name, skip_component
+    )

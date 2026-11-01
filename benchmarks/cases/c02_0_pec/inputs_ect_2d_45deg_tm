@@ -1,0 +1,61 @@
+# M2a-1b stability case: 45-degree PEC plane, TM pulse (Ex + By), long run.
+#
+# A slanted plane exercises the conformal B update on real cut cells (faces of
+# many different volume fractions) and the BCK-only stabilisation used for the
+# TE components (Bx/Bz). The plane is at 45 deg so that the reflected beam runs
+# parallel to the -x axis, i.e. exactly along a grid line - the most demanding
+# orientation for the staircase-vs-conformal masking.
+#
+# What is checked (see check_stability.py):
+#   * all probe values stay finite,
+#   * the total field energy does not drift by more than a few percent,
+#   * the late-time peak is not larger than the early-time peak (no growth).
+#
+# This is a *stability smoke test*, not an accuracy criterion: single cut cells
+# with tiny volume fractions are not scanned here.
+
+max_step = 2000
+
+amr.n_cell = 128 128
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -8.0 -8.0
+geometry.prob_hi =  8.0  8.0
+
+warpx.cfl = 0.4
+algo.maxwell_solver = ect
+algo.particle_shape = 1
+warpx.use_filter = 0
+
+boundary.field_lo = pec pec
+boundary.field_hi = pec pec
+
+# 45-degree plane through the origin: normal (cos 45, sin 45), PEC on the + side.
+my_constants.alpha = 0.7853981634
+my_constants.x0 = 0.0
+my_constants.z0 = 0.0
+warpx.eb_implicit_function = "cos(alpha)*(x-x0) + sin(alpha)*(z-z0)"
+
+# TE pulse, propagating along +z, Bx = -Ey/c.
+my_constants.E0 = 1.0e6
+my_constants.zc = -3.0
+my_constants.w = 0.5
+my_constants.c = 299792458.0
+warpx.E_ext_grid_init_style = parse_E_ext_grid_function
+warpx.B_ext_grid_init_style = parse_B_ext_grid_function
+warpx.Ex_external_grid_function(x,y,z) = "E0*exp(-((z-zc)/w)^2)"
+warpx.Ey_external_grid_function(x,y,z) = "0"
+warpx.Ez_external_grid_function(x,y,z) = "0"
+warpx.Bx_external_grid_function(x,y,z) = "0"
+warpx.By_external_grid_function(x,y,z) = "E0*exp(-((z-zc)/w)^2)/c"
+warpx.Bz_external_grid_function(x,y,z) = "0"
+
+warpx.reduced_diags_names = fp1 fe
+fp1.type = FieldProbe
+fp1.intervals = 4
+fp1.probe_geometry = Point
+fp1.x_probe = 0.0
+fp1.z_probe = -1.0
+fe.type = FieldEnergy
+fe.intervals = 4

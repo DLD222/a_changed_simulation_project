@@ -1,0 +1,12 @@
+CEXE_sources += DarwinLinearFieldOperator.cpp
+CEXE_sources += ImplicitSolver.cpp
+CEXE_sources += SemiImplicitEM.cpp
+CEXE_sources += SemiImplicitDarwin.cpp
+CEXE_sources += SparseJacobianMatrix.cpp
+CEXE_sources += ThetaImplicitEM.cpp
+CEXE_sources += StrangImplicitSpectralEM.cpp
+CEXE_sources += WarpXImplicitOps.cpp
+CEXE_sources += WarpXSolverDOF.cpp
+CEXE_sources += WarpXSolverVec.cpp
+
+VPATH_LOCATIONS   += $(WARPX_HOME)/Source/FieldSolver/ImplicitSolvers

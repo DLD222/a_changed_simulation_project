@@ -1,0 +1,54 @@
+# C2-0: PEC cut-cell baseline. Slanted PEC plane, field-initialized plane-wave
+# pulse, ECT solver. Validate |r| = 1 and phase inversion (r = -1).
+
+max_step = 800
+stop_time = 80.0e-9
+
+amr.n_cell = 384 384
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -15.0 -15.0
+geometry.prob_hi =  15.0  15.0
+
+warpx.cfl = 0.4
+algo.maxwell_solver = ect
+algo.particle_shape = 1
+warpx.use_filter = 0
+
+boundary.field_lo = pml pml
+boundary.field_hi = pml pml
+
+# Slanted PEC plane: normal (cos a, sin a); PEC on the positive side.
+my_constants.alpha = 0.5235987756     # 30 degrees
+my_constants.x0 = 0.0
+my_constants.z0 = 0.0
+warpx.eb_implicit_function = "cos(alpha)*(x-x0) + sin(alpha)*(z-z0)"
+
+# Field-initialized plane-wave pulse (s-polarization, Ey out of plane).
+# Gaussian envelope centered at z=-8, propagating +z (Bx = -Ey/c).
+my_constants.E0 = 1.0e6
+my_constants.zc = -8.0
+my_constants.w = 1.5
+my_constants.c = 299792458.0
+warpx.E_ext_grid_init_style = parse_E_ext_grid_function
+warpx.B_ext_grid_init_style = parse_B_ext_grid_function
+warpx.Ex_external_grid_function(x,y,z) = "0"
+warpx.Ey_external_grid_function(x,y,z) = "E0*exp(-((z-zc)/w)^2)"
+warpx.Ez_external_grid_function(x,y,z) = "0"
+warpx.Bx_external_grid_function(x,y,z) = "-E0*exp(-((z-zc)/w)^2)/c"
+warpx.By_external_grid_function(x,y,z) = "0"
+warpx.Bz_external_grid_function(x,y,z) = "0"
+
+# Point probes: incident/reflected region and shadow region.
+warpx.reduced_diags_names = fp_inc fp_shadow
+fp_inc.type = FieldProbe
+fp_inc.intervals = 2
+fp_inc.probe_geometry = Point
+fp_inc.x_probe = 0.0
+fp_inc.z_probe = -5.0
+fp_shadow.type = FieldProbe
+fp_shadow.intervals = 2
+fp_shadow.probe_geometry = Point
+fp_shadow.x_probe = 0.0
+fp_shadow.z_probe = 4.0

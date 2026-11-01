@@ -1,0 +1,64 @@
+# C2-0 / M2a-1b L2a criterion: Yee reference on a regular domain (no EB cells).
+#
+# The PEC surface is pushed outside the domain ("z - 100"), so AMReX creates no
+# cut cells and the ECT geometry is uniform. Under these conditions the
+# per-unit-y reduction makes the conformal update algebraically identical to the
+# staggered Yee update, so this run has to reproduce inputs_yee_2d_noeb
+# bit-for-bit (checked by verify_l2a.py). The pulse reflects off the PEC domain
+# wall at z = +8 during the run, so the boundary path is exercised as well.
+#
+# This replaced the original L2 criterion (a grid-aligned PEC plane), which was
+# based on the assumption that an aligned surface produces no cut cells. It does
+# not: AMReX flags the open cell that *touches* the surface as a cut cell with
+# volume fraction 1, and the staircase masking used by the Yee solver treats it
+# as closed, losing one cell layer (see ECT_2D_TE_REPORT.md, L2b).
+
+max_step = 200
+
+amr.n_cell = 64 64
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -8.0 -8.0
+geometry.prob_hi =  8.0  8.0
+
+warpx.cfl = 0.4
+algo.particle_shape = 1
+warpx.use_filter = 0
+
+boundary.field_lo = pec pec
+boundary.field_hi = pec pec
+
+# No cut cells anywhere: the EB surface is outside of the domain.
+warpx.eb_implicit_function = "z - 100"
+
+# Field-initialized TE pulse, propagating along +z, Bx = -Ey/c.
+my_constants.E0 = 1.0e6
+my_constants.zc = -5.0
+my_constants.w  = 0.6
+my_constants.kz = 2.0943951023931953
+my_constants.c  = 299792458.0
+warpx.E_ext_grid_init_style = parse_E_ext_grid_function
+warpx.B_ext_grid_init_style = parse_B_ext_grid_function
+warpx.Ex_external_grid_function(x,y,z) = "0"
+warpx.Ey_external_grid_function(x,y,z) = "E0*exp(-((z-zc)/w)^2)*cos(kz*z)"
+warpx.Ez_external_grid_function(x,y,z) = "0"
+warpx.Bx_external_grid_function(x,y,z) = "-E0*exp(-((z-zc)/w)^2)*cos(kz*z)/c"
+warpx.By_external_grid_function(x,y,z) = "0"
+warpx.Bz_external_grid_function(x,y,z) = "0"
+
+warpx.reduced_diags_names = fp1 fp2 fe
+fp1.type = FieldProbe
+fp1.intervals = 1
+fp1.probe_geometry = Point
+fp1.x_probe = 0.0
+fp1.z_probe = -1.5
+fp2.type = FieldProbe
+fp2.intervals = 1
+fp2.probe_geometry = Point
+fp2.x_probe = 0.0
+fp2.z_probe = 1.5
+fe.type = FieldEnergy
+fe.intervals = 1
+
+algo.maxwell_solver = yee

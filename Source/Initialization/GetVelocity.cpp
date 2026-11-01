@@ -1,0 +1,28 @@
+/* Copyright 2021 Hannah Klion
+ *
+ * This file is part of WarpX.
+ *
+ * License: BSD-3-Clause-LBNL
+ */
+
+#include "GetVelocity.H"
+
+GetVelocityVector::GetVelocityVector (VelocityProperties const& vel) noexcept
+    : m_type{vel.m_type}
+#if defined(WARPX_USE_OPENPMD) && !defined(WARPX_DIM_RZ) && \
+    !defined(WARPX_DIM_RCYLINDER) && !defined(WARPX_DIM_RSPHERE)
+    , m_from_file{vel.m_u_mean_x_reader.get(), vel.m_u_mean_y_reader.get(),
+                  vel.m_u_mean_z_reader.get()}
+#endif
+{
+    if (m_type == VelConstantVector) {
+        m_ux_mean = vel.m_ux_mean;
+        m_uy_mean = vel.m_uy_mean;
+        m_uz_mean = vel.m_uz_mean;
+    }
+    else if (m_type == VelParserFunctionVector) {
+        m_ux_mean_parser = vel.m_ptr_ux_mean_parser->compile<3>();
+        m_uy_mean_parser = vel.m_ptr_uy_mean_parser->compile<3>();
+        m_uz_mean_parser = vel.m_ptr_uz_mean_parser->compile<3>();
+    }
+}

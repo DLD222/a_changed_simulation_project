@@ -1,0 +1,63 @@
+# M2a-1b cross-check: TE pulse propagation in 3D (ECT).
+#
+# Purpose: confirm that the 2D-only machinery (per-unit-y geometry, Bz in the
+# ECT loop, the Rho recompute in AddExternalFields) did not disturb the 3D path,
+# and that 3D ECT still propagates a TE pulse at c after the timing fix.
+#
+# The embedded boundary is pushed outside the domain so that no cut cell exists
+# and the check is about the bulk update only. Geometry:
+#   * domain [-4, 4]^3, 32^3 cells, dx = 0.25 m
+#   * TE pulse: Ey(z) = E0 exp(-((z-zc)/w)^2), Bx = -Ey/c, zc = -2, w = 0.5
+#   * probes at z = -1 and z = +2 on the axis
+#
+# Expected (planar wave, speed c):
+#   t_inc(p1) = 1/c = 3.34 ns, t_inc(p2) = 4/c = 13.34 ns, so
+#   t(p2) - t(p1) = 3/c = 10.007 ns, |Ey| equal within the pulse shape, and
+#   Bx/Ey = -1/c = -3.3356e-9 s/m.
+
+max_step = 400
+
+amr.n_cell = 32 32 32
+amr.max_grid_size = 32
+amr.max_level = 0
+geometry.dims = 3
+geometry.prob_lo = -4.0 -4.0 -4.0
+geometry.prob_hi =  4.0  4.0  4.0
+
+warpx.cfl = 0.4
+algo.maxwell_solver = ect
+algo.particle_shape = 1
+warpx.use_filter = 0
+
+boundary.field_lo = pec pec pec
+boundary.field_hi = pec pec pec
+
+# No cut cells: the EB surface sits outside of the box.
+warpx.eb_implicit_function = "z - 100"
+
+my_constants.E0 = 1.0e6
+my_constants.zc = -2.0
+my_constants.w = 0.5
+my_constants.c = 299792458.0
+warpx.E_ext_grid_init_style = parse_E_ext_grid_function
+warpx.B_ext_grid_init_style = parse_B_ext_grid_function
+warpx.Ex_external_grid_function(x,y,z) = "0"
+warpx.Ey_external_grid_function(x,y,z) = "E0*exp(-((z-zc)/w)^2)"
+warpx.Ez_external_grid_function(x,y,z) = "0"
+warpx.Bx_external_grid_function(x,y,z) = "-E0*exp(-((z-zc)/w)^2)/c"
+warpx.By_external_grid_function(x,y,z) = "0"
+warpx.Bz_external_grid_function(x,y,z) = "0"
+
+warpx.reduced_diags_names = p1 p2
+p1.type = FieldProbe
+p1.intervals = 1
+p1.probe_geometry = Point
+p1.x_probe = 0.0
+p1.y_probe = 0.0
+p1.z_probe = -1.0
+p2.type = FieldProbe
+p2.intervals = 1
+p2.probe_geometry = Point
+p2.x_probe = 0.0
+p2.y_probe = 0.0
+p2.z_probe = 2.0
