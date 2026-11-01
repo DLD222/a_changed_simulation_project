@@ -2673,7 +2673,7 @@ WarpX::AllocLevelMFs (int lev, const BoxArray& ba, const DistributionMapping& dm
     if (m_em_solver_medium == MediumForEM::Macroscopic) {
         WARPX_ALWAYS_ASSERT_WITH_MESSAGE( lev==0,
             "Macroscopic properties are not supported with mesh refinement.");
-        m_macroscopic_properties->AllocateLevelMFs(ba, dm, ngEB);
+        m_macroscopic_properties->AllocateLevelMFs(ba, dm, ngEB, Ex_nodal_flag, Ey_nodal_flag, Ez_nodal_flag);
     }
 
     if (fft_do_time_averaging)

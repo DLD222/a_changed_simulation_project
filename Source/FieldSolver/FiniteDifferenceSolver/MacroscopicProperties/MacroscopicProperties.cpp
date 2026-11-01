@@ -215,7 +215,10 @@ void
 MacroscopicProperties::AllocateLevelMFs (
     const amrex::BoxArray& ba,
     const amrex::DistributionMapping& dmap,
-    const amrex::IntVect& ng_EB_alloc )
+    const amrex::IntVect& ng_EB_alloc,
+    const amrex::IntVect& Ex_nodal,
+    const amrex::IntVect& Ey_nodal,
+    const amrex::IntVect& Ez_nodal )
 {
     // Need >=1 ghost cell so that i-1 / j-1 reads at the domain boundary are in-bounds
     // (seed/update/diagnose of rho_medium and the per-component Interp read neighbours).
@@ -227,6 +230,15 @@ MacroscopicProperties::AllocateLevelMFs (
     m_eps_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_props);
     // mu is cell-centered MultiFab
     m_mu_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 1, ng_props);
+    // Node-centred eps/sigma per E component (§4.1/§4.2): convert(ba, nodal) keeps the
+    // same grid count and ordering as ba, so mfi.index() stays aligned across them.
+    amrex::IntVect const en[3] = {Ex_nodal, Ey_nodal, Ez_nodal};
+    for (int c = 0; c < 3; ++c) {
+        m_eps_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 1, ng_props);
+        m_sigma_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 1, ng_props);
+        m_eps_node[c]->setVal(amrex::Real(0.0));
+        m_sigma_node[c]->setVal(amrex::Real(0.0));
+    }
     // Cell-centred anisotropic permittivity tensors (6 comps each), present only when
     // epsilon_tensor_* / epsilon2_tensor_* are given.
     if (m_has_eps_tensor) {
@@ -330,13 +342,65 @@ MacroscopicProperties::InitData (
             "the exact exponential step.");
     }
 
+    m_eps_mf->FillBoundary(geom.periodicity());
+    m_sigma_mf->FillBoundary(geom.periodicity());
+    m_mu_mf->FillBoundary(geom.periodicity());
+    // (ghosts above hold the neighbour-grid cell values used by the node rule)
+
+    // Node-centred eps/sigma per E component (§4.1/§4.2). For the node at (i,j) the two
+    // cells adjacent along the interface normal (z here) are (i,j-1) and (i,j):
+    //   tangential (Ex, Ey): arithmetic mean, sigma = 0 if either side is vacuum
+    //   normal     (Ez)    : harmonic mean (D_n continuous, series sigma)
+    // Both grid copies of a shared node get the same value, so no owner sync is needed.
+    for (int c = 0; c < 3; ++c) {
+        bool const normal = (c == 2);
+        for (amrex::MFIter mfi(*m_eps_node[c]); mfi.isValid(); ++mfi) {
+            amrex::Box const& b = mfi.validbox();
+            auto const ec = m_eps_mf->const_array(mfi);
+            auto const sc = m_sigma_mf->const_array(mfi);
+            auto en = m_eps_node[c]->array(mfi);
+            auto sn = m_sigma_node[c]->array(mfi);
+            // clamp to the cell-centred valid index range (node boxes are one wider)
+            amrex::Box const cbox = m_eps_mf->boxArray()[mfi.index()];
+            int const ilo = cbox.smallEnd(0), ihi = cbox.bigEnd(0);
+            amrex::ParallelFor(b, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                int const ii = amrex::min(amrex::max(i, ilo), ihi);
+                int const jm = j - 1;   // may be in the neighbour grid: use the ghost
+                int const jp = j;
+                amrex::Real const eL = ec(ii, jm, k), eR = ec(ii, jp, k);
+                amrex::Real const sL = sc(ii, jm, k), sR = sc(ii, jp, k);
+                if (normal) {
+                    en(i,j,k) = (eL + eR > amrex::Real(0.0)) ? amrex::Real(2.0)*eL*eR/(eL+eR) : amrex::Real(0.0);
+                    sn(i,j,k) = (sL + sR > amrex::Real(0.0)) ? amrex::Real(2.0)*sL*sR/(sL+sR) : amrex::Real(0.0);
+                } else {
+                    en(i,j,k) = amrex::Real(0.5) * (eL + eR);
+                    sn(i,j,k) = (sL <= amrex::Real(0.0) || sR <= amrex::Real(0.0))
+                        ? amrex::Real(0.0) : amrex::Real(0.5) * (sL + sR);
+                }
+            });
+        }
+    }
+
+    {
+        for (int c = 0; c < 3; ++c) {
+            for (amrex::MFIter mfi(*m_eps_node[c]); mfi.isValid(); ++mfi) {
+                if (mfi.validbox().contains(320, 320, 0)) {
+                    auto const en = m_eps_node[c]->const_array(mfi);
+                    auto const sn = m_sigma_node[c]->const_array(mfi);
+                    amrex::Print() << "[NODE] c=" << c << " (320,319..322): ";
+                    for (int jj = 319; jj <= 322; ++jj) {
+                        amrex::Print() << " j" << jj << "(e=" << en(320,jj,0) << ",s=" << sn(320,jj,0) << ")";
+                    }
+                    amrex::Print() << "\n";
+                }
+            }
+        }
+    }
+
     // Fill the ghost cells once: the parser/constant init already wrote the analytic
     // continuation into the ghost region, but FillBoundary exchanges the periodic
     // boundary values so that i-1 / j-1 reads at the domain edge are the wrapped values.
     // eps/sigma/mu are static, so this is a one-time cost, not per-step.
-    m_eps_mf->FillBoundary(geom.periodicity());
-    m_sigma_mf->FillBoundary(geom.periodicity());
-    m_mu_mf->FillBoundary(geom.periodicity());
 
     const amrex::IntVect sigma_stag = m_sigma_mf->ixType().toIntVect();
     const amrex::IntVect epsilon_stag = m_eps_mf->ixType().toIntVect();

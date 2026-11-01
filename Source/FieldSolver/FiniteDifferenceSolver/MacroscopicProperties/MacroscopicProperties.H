@@ -47,7 +47,10 @@ public:
     void AllocateLevelMFs (
         const amrex::BoxArray& ba,
         const amrex::DistributionMapping& dm,
-        const amrex::IntVect& ng_EB_alloc );
+        const amrex::IntVect& ng_EB_alloc,
+        const amrex::IntVect& Ex_nodal,
+        const amrex::IntVect& Ey_nodal,
+        const amrex::IntVect& Ez_nodal );
 
     /**
      * \brief Initialize multifabs storing macroscopic multifabs
@@ -67,6 +70,8 @@ public:
     amrex::MultiFab& getsigma_mf  () {return (*m_sigma_mf);}
     /** return MultiFab, epsilon (permittivity) of the medium. */
     amrex::MultiFab& getepsilon_mf  () {return (*m_eps_mf);}
+    amrex::MultiFab& get_eps_node_mf (int c) {return (*m_eps_node[c]);}
+    amrex::MultiFab& get_sigma_node_mf (int c) {return (*m_sigma_node[c]);}
     /** return MultiFab, mu (permeability) of the medium. */
     amrex::MultiFab& getmu_mf  () {return (*m_mu_mf);}
 
@@ -185,6 +190,11 @@ private:
     std::unique_ptr<amrex::MultiFab> m_sigma_m1;
     std::unique_ptr<amrex::MultiFab> m_sigma_m2;
     bool m_sigma_mat_ready = false;
+    /** Node-centred material properties, one MultiFab per E component (see
+     *  MEDIUM_MULTIGRID_ROOTCAUSE_AND_FIX.md §4): every shared node then has a single
+     *  well-defined value and both grid copies are updated by the same rule. */
+    std::unique_ptr<amrex::MultiFab> m_eps_node[3];
+    std::unique_ptr<amrex::MultiFab> m_sigma_node[3];
     /** dt used to build m_sigma_m1/m2 (asserted constant, see 技术路径 §7.7) */
     amrex::Real m_sigma_dt = 0.0;
     bool m_rho_medium_seeded = false;
