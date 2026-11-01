@@ -309,15 +309,12 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
         //     E^{n+1} = M1 E^n + M2 (curlH - J)
         // Same curl expressions and the same sign for J as the Yee branch above.
         if (has_sig_mat) {
-            Box const& tb = mfi.tilebox();
+            // Cell-centred box (sigma's valid region): every sigma>0 cell gets the
+            // exponential step. The three staggered E components are read at the same
+            // index (collocated, O(h) at an interface) — see 技术路径 §7.7.
+            Box const& tb = mfi.tilebox(sigma_mf.ixType().toIntVect());
             amrex::ParallelFor(tb, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                 if (sigma_arr(i, j, k) <= amrex::Real(0.0)) { return; }
-                // Same EB/PEC mask as the per-component loops above: never write into
-                // a cell whose E update is disabled (otherwise the matrix step would
-                // silently bypass the boundary condition).
-                if (update_Ex_arr && update_Ex_arr(i, j, k) == 0) { return; }
-                if (update_Ey_arr && update_Ey_arr(i, j, k) == 0) { return; }
-                if (update_Ez_arr && update_Ez_arr(i, j, k) == 0) { return; }
                 amrex::Real const cx = - T_Algo::DownwardDz(Hy, coefs_z, n_coefs_z, i, j, k,0)
                                        + T_Algo::DownwardDy(Hz, coefs_y, n_coefs_y, i, j, k,0);
                 amrex::Real const cy =   T_Algo::DownwardDz(Hx, coefs_z, n_coefs_z, i, j, k,0)
@@ -333,9 +330,12 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                                  + m2a(i, j, k, 3*c + d) * rhs[d];
                     }
                 }
-                Ex(i, j, k) = enew[0];
-                Ey(i, j, k) = enew[1];
-                Ez(i, j, k) = enew[2];
+                // Per-component EB/PEC mask: a masked component keeps E^n. Safe for the
+                // scalar-sigma path (M1/M2 diagonal -> components independent); a future
+                // tensor sigma must require all three unmasked or abort (see 技术路径).
+                if (!(update_Ex_arr && update_Ex_arr(i, j, k) == 0)) { Ex(i, j, k) = enew[0]; }
+                if (!(update_Ey_arr && update_Ey_arr(i, j, k) == 0)) { Ey(i, j, k) = enew[1]; }
+                if (!(update_Ez_arr && update_Ez_arr(i, j, k) == 0)) { Ez(i, j, k) = enew[2]; }
             });
         }
     }
