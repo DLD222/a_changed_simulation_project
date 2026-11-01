@@ -17,18 +17,33 @@ copyright notices; they are not used to promote this fork.
   kept unmodified in this repository)
 - License of this fork: **BSD-3-Clause** (see `LICENSE`)
 
-## What this fork adds
+## Differences from upstream WarpX
 
-- A tensor-medium field solver (`algo.em_solver_medium = macroscopic`): Yee path with
-  3x3 permittivity / permeability / conductivity tensors, per-E-component
-  `chi^-1` rows, and the full matrix-vector update `E = alpha E + beta0 sum_d chi^-1_cd D_d`.
-- Kottke subpixel interface averaging (tau transform) with 6-component tensor input.
-- A matrix-exponential integrator for conductive media, precomputing
-  `M1 = exp(-A dt)` and `M2 = (1-exp(-A dt)) A^-1 eps^-1` per cell.
-- A quantitative validation suite (`benchmarks/`, `Docs/research_notes/`).
+**Project level.** This is an **unofficial fork** of
+[WarpX](https://github.com/BLAST-WarpX/warpX). It is not the official WarpX
+repository and is not affiliated with, endorsed by, sponsored by or approved
+by the WarpX developers, BLAST-WarpX, LBNL, LLNL or the U.S. DOE. Upstream code
+and notices are retained unmodified (`LICENSE.txt`, `NOTICE.txt`, `LEGAL.txt`);
+this fork's additions are released under BSD-3-Clause (`LICENSE`).
 
-See [FORK_NOTICE.md](FORK_NOTICE.md) for scope, the licence statement and the
-research-notes index.
+**Technical differences** (all on the macroscopic medium path, Yee solver):
+
+| Area | Upstream WarpX | This fork |
+|---|---|---|
+| Material tensors | scalar (or diagonal) epsilon / mu / sigma | 3x3 **tensor** epsilon, mu, sigma on the Yee path; per-E-component `chi^-1` rows; full `E_c = alpha E_c + beta0 sum_d (chi^-1)_{c,d} D_d` |
+| Tensor input | -- | `epsilon_tensor_xx..yz`, `epsilon2_tensor_*` (6 components each); **bulk mode** for uniform anisotropic media (no interface) |
+| Dielectric interface | scalar subpixel (Kottke, isotropic) | **anisotropic subpixel**: Kottke tau transform for anisotropic materials, interface-frame inverse, general 3D frame (`n_y != 0`), f/n from the interface parser |
+| Conductivity | local backward-Euler / Lax-Wendroff update | **matrix-exponential integrator** `E = M1 E + M2 (curlH - J)` with `M1 = exp(-A dt)`, `M2 = (1-exp(-A dt)) A^-1 eps^-1`; `sigma = 0` cells keep the original Yee path bit-for-bit |
+| Validation | upstream test suite | added quantitative suite: Fresnel (normal/oblique, s/p), lossy-wave attenuation, disk resonances, tensor unit tests (`benchmarks/cases/c02_0_pec/`), and 41 research notes (`Docs/research_notes/`) |
+
+**What is not changed.** The EB/cut-cell (`ect`) solver keeps its scalar
+`inv_epsr` path; the particle/PIC side, PSATD, and the upstream test suite are
+untouched. The tensor/subpixel path is **Yee-only** (`macroscopic_subpixel` with
+`maxwell_solver = ect` aborts). Known upstream limitation: PML combined with
+`em_solver_medium = macroscopic` is not supported (see `Docs/research_notes/MEDIUM_CODE_AUDIT.md`).
+A tensor conductivity input (`sigma_tensor_*`) is not implemented yet.
+
+See [FORK_NOTICE.md](FORK_NOTICE.md) for scope, licensing and the research-notes index.
 
 ## License
 
