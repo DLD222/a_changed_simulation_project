@@ -273,9 +273,13 @@ Mat3 mat3_fun (const amrex::Real lam[3], const amrex::Real V[9], int kind, amrex
         else if (kind == 1) { g[i] = amrex::Real(1.0) / std::sqrt(lam[i]); }
         else if (kind == 2) { g[i] = std::exp(-lam[i] * dt); }
         else {
-            g[i] = (std::abs(lam[i]) > amrex::Real(1e-300))
-                 ? (amrex::Real(1.0) - std::exp(-lam[i] * dt)) / lam[i]
-                 : dt;
+            amrex::Real const x = lam[i] * dt;
+            if (std::abs(x) < amrex::Real(1e-8)) {
+                // series form avoids 1 - exp(-x) cancellation for small x
+                g[i] = dt * (amrex::Real(1.0) - amrex::Real(0.5) * x + x * x / amrex::Real(6.0));
+            } else {
+                g[i] = (amrex::Real(1.0) - std::exp(-x)) / lam[i];
+            }
         }
     }
     Mat3 out{};

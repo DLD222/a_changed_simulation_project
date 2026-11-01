@@ -88,6 +88,11 @@ public:
     amrex::MultiFab& get_sigma_m2_mf () {return (*m_sigma_m2);}
     bool has_sigma_matrices () const {return m_sigma_mat_ready;}
     amrex::Real get_sigma_dt () const {return m_sigma_dt;}
+    /** Per-instance (not process-static) seed flag for rho_medium; a second run in the
+     *  same process must re-seed. */
+    bool rho_medium_seeded () const {return m_rho_medium_seeded;}
+    void set_rho_medium_seeded () {m_rho_medium_seeded = true;}
+    int& gauss_check_step () {return m_gauss_check_step;}
     /** Fill the three rows from the scalar eps (diagonal) and, if an EB level set is
      *  available, apply the Kottke normal/tangential averaging. Called after InitEB. */
     /** Second material permittivity. Together with `macroscopic.interface_function(x,y,z)`
@@ -168,6 +173,8 @@ private:
     bool m_sigma_mat_ready = false;
     /** dt used to build m_sigma_m1/m2 (asserted constant, see 技术路径 §7.7) */
     amrex::Real m_sigma_dt = 0.0;
+    bool m_rho_medium_seeded = false;
+    int m_gauss_check_step = 0;
 
     /** Stores initialization type for conductivity : constant or parser */
     std::string m_sigma_s = "constant";

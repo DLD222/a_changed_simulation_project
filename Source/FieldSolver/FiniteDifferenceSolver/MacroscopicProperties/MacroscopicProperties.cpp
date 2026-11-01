@@ -345,6 +345,9 @@ MacroscopicProperties::InitSubpixelRows (
     // P2: precompute M1 = exp(-A dt), M2 = (1-exp(-A dt)) A^-1 eps^-1 for sigma>0
     // cells only (see 技术路径 §7.7). Called from every branch that fills the rows.
     auto fill_sigma_mats = [&]() {
+        WARPX_ALWAYS_ASSERT_WITH_MESSAGE(!m_has_eps_tensor,
+            "macroscopic sigma exponential: tensor epsilon is not yet supported here "
+            "(a cell-centred eps tensor is required; currently only scalar eps1/eps2)");
         amrex::Real const smax = m_sigma_mf ? m_sigma_mf->max(0) : amrex::Real(0.0);
         if (smax <= amrex::Real(0.0)) { return; }
         m_sigma_m1 = std::make_unique<amrex::MultiFab>(ba, dm, 9, 0);
@@ -352,6 +355,7 @@ MacroscopicProperties::InitSubpixelRows (
         m_sigma_m1->setVal(amrex::Real(0.0));
         m_sigma_m2->setVal(amrex::Real(0.0));
         amrex::MultiFab const& sigm = *m_sigma_mf;
+        amrex::MultiFab const& epsm = *m_eps_mf;
         // eps here must be the eps of THIS cell, not material 1: m_eps_mf stores only
         // material 1, so using it everywhere made A = eps^-1 sigma wrong by O(1) in
         // material 2 (4x when eps2/eps1 = 4). Reuse the same phi sub-sampling that the
@@ -370,10 +374,15 @@ MacroscopicProperties::InitSubpixelRows (
             auto const& m1a = m_sigma_m1->array(mfi);
             auto const& m2a = m_sigma_m2->array(mfi);
             auto const& sa  = sigm.const_array(mfi);
+            auto const& ea  = epsm.const_array(mfi);
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                 amrex::Real const sv = sa(i,j,k);
                 if (sv <= amrex::Real(0.0)) { return; }
-                amrex::Real ev = m_epsilon;   // bulk / no interface: material 1 everywhere
+                // eps of THIS cell: m_eps_mf holds the local (possibly parser) value of
+                // material 1; m_epsilon is only the default scalar and would be wrong for a
+                // spatially varying epsilon. Interface cells use <eps> = f*eps1 + (1-f)*eps2.
+                // NOTE: tensor eps is not yet supported here (asserted below).
+                amrex::Real ev = ea(i,j,k);
                 if (iface_on) {
                     amrex::Real const xc = plo_x + (static_cast<amrex::Real>(i) + amrex::Real(0.5)) * dxs;
                     amrex::Real const zc = plo_z + (static_cast<amrex::Real>(j) + amrex::Real(0.5)) * dzs;
@@ -386,7 +395,7 @@ MacroscopicProperties::InitSubpixelRows (
                         }
                     }
                     amrex::Real const f1 = static_cast<amrex::Real>(n1) * inv_ns * inv_ns;
-                    ev = f1 * m_epsilon + (amrex::Real(1.0) - f1) * eps2s;   // <eps>
+                    ev = f1 * ea(i,j,k) + (amrex::Real(1.0) - f1) * eps2s;   // <eps>
                 }
                 warpx::subpixel::Mat3 E{};
                 E(0,0) = ev; E(1,1) = ev; E(2,2) = ev;
@@ -398,53 +407,6 @@ MacroscopicProperties::InitSubpixelRows (
             });
         }
         m_sigma_mat_ready = true;
-        {
-            // Programmatic comparison hook: dump one box to CSV (%.17g) so the
-            // Python reference can assert a tolerance instead of eyeballing prints.
-            std::ofstream f("sigma_mats.csv");
-            f.precision(17);
-            f << "i,j,k,eps1,eps_used,sigma,dt";
-            for (int c = 0; c < 9; ++c) { f << ",m1_" << c; }
-            for (int c = 0; c < 9; ++c) { f << ",m2_" << c; }
-            f << "\n";
-            amrex::Box const b0 = m_sigma_m1->boxArray()[0];
-            auto const A1 = m_sigma_m1->get(0).const_array();
-            auto const A2 = m_sigma_m2->get(0).const_array();
-            auto const Ae = m_eps_mf->get(0).const_array();
-            auto const As = m_sigma_mf->get(0).const_array();
-            // 2D: the third index is degenerate, so smallEnd(2) is invalid (same trap as
-            // the earlier plo[2]/CellSize(2) bugs).
-            int k0 = 0, k1 = 0;
-#if (AMREX_SPACEDIM == 3)
-            k0 = b0.smallEnd(2); k1 = b0.bigEnd(2);
-#endif
-            for (int k = k0; k <= k1; ++k) {
-              for (int j = b0.smallEnd(1); j <= b0.bigEnd(1); ++j) {
-                for (int i = b0.smallEnd(0); i <= b0.bigEnd(0); ++i) {
-                    amrex::Real eps_used_l = m_epsilon;
-if (iface_on) {
-    amrex::Real const xc2 = plo_x + (static_cast<amrex::Real>(i) + amrex::Real(0.5)) * dxs;
-    amrex::Real const zc2 = plo_z + (static_cast<amrex::Real>(j) + amrex::Real(0.5)) * dzs;
-    int n1b = 0;
-    for (int a = 0; a < nsub2; ++a) {
-        for (int b = 0; b < nsub2; ++b) {
-            amrex::Real const xx = xc2 + (static_cast<amrex::Real>(a) + amrex::Real(0.5)) * inv_ns * dxs - amrex::Real(0.5) * dxs;
-            amrex::Real const zz = zc2 + (static_cast<amrex::Real>(b) + amrex::Real(0.5)) * inv_ns * dzs - amrex::Real(0.5) * dzs;
-            if (phi_s(xx, amrex::Real(0.0), zz) > amrex::Real(0.0)) { ++n1b; }
-        }
-    }
-    amrex::Real const f1b = static_cast<amrex::Real>(n1b) * inv_ns * inv_ns;
-    eps_used_l = f1b * m_epsilon + (amrex::Real(1.0) - f1b) * eps2s;
-}
-f << i << "," << j << "," << k << "," << Ae(i,j,k) << "," << eps_used_l << ","
-  << As(i,j,k) << "," << dt;
-                    for (int c = 0; c < 9; ++c) { f << "," << A1(i,j,k,c); }
-                    for (int c = 0; c < 9; ++c) { f << "," << A2(i,j,k,c); }
-                    f << "\n";
-                }
-              }
-            }
-        }
         amrex::Print() << "[SIGMA-EXP] sigma_max=" << smax << " dt=" << dt
                        << "  M1/M2 filled where sigma>0\n";
     };

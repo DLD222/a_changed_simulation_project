@@ -1267,14 +1267,13 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
             amrex::Real const dx = Geom(lev).CellSize(0);
             amrex::Real const dz = Geom(lev).CellSize(AMREX_SPACEDIM-1);
             amrex::Real const dtl = a_dt;
-            // periodic ghost fill, so that ea(i-1)/sa(i-1) at the boundary are the
-            // wrapped values (otherwise the boundary node residual is O(div D), not 0).
-            eps.FillBoundary(Geom(lev).periodicity());
-            sig.FillBoundary(Geom(lev).periodicity());
             // Seed rho_medium(0) = div_h(D(0)) on the very first call, so the test
-            // measures drift, not the initial-condition error. lev==0 is asserted above.
-            static bool rho_medium_seeded = false;
-            if (!rho_medium_seeded) {
+            // measures drift, not the initial-condition error. Per-instance flag (a
+            // process running two problems must re-seed). Ghost fill is done once here
+            // (eps/sigma are static), not every step.
+            if (!m_macroscopic_properties->rho_medium_seeded()) {
+                eps.FillBoundary(Geom(lev).periodicity());
+                sig.FillBoundary(Geom(lev).periodicity());
                 for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
                     amrex::Box const& bx = mfi.tilebox(rho->ixType().toIntVect());
                     auto const& rh = rho->array(mfi);
@@ -1286,7 +1285,7 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                                   + (ea(i,j,k)*ez(i,j,k) - ea(i,j-1,k)*ez(i,j-1,k)) / dz;
                     });
                 }
-                rho_medium_seeded = true;
+                m_macroscopic_properties->set_rho_medium_seeded();
             }
             for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
                 amrex::Box const& bx = mfi.tilebox(rho->ixType().toIntVect());
@@ -1298,10 +1297,12 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                 amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                     // step-averaging factor for a = sigma/eps (scalar isotropic path)
                     auto cfun = [=](amrex::Real s, amrex::Real e) {
-                        amrex::Real const a = s / e;
-                        return (a * dtl > amrex::Real(1e-30))
-                            ? (amrex::Real(1.0) - std::exp(-a * dtl)) / (a * dtl)
-                            : amrex::Real(1.0);
+                        amrex::Real const x = (s / e) * dtl;   // = a*dt
+                        if (x < amrex::Real(1e-8)) {
+                            // series avoids the 1 - exp(-x) cancellation for small x
+                            return amrex::Real(1.0) - amrex::Real(0.5) * x + x * x / amrex::Real(6.0);
+                        }
+                        return (amrex::Real(1.0) - std::exp(-x)) / x;
                     };
                     // Jx at x-face, Jz at z-face (same location as Dx/Dz), sigma
                     // collocated at the cell centre (uniform-sigma test is exact).
@@ -1330,9 +1331,8 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
     if (m_em_solver_medium == MediumForEM::Macroscopic) {
         auto* rho = m_fields.get(FieldType::rho_medium_fp, lev);
         if (rho != nullptr && WarpX::verbose > 0) {
-            static int gauss_check_step = 0;
-            ++gauss_check_step;
-            if (gauss_check_step % 20 == 0) {
+            ++m_macroscopic_properties->gauss_check_step();
+            if (m_macroscopic_properties->gauss_check_step() % 20 == 0) {
                 auto const& Ex2 = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{0}, lev);
                 auto const& Ez2 = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{2}, lev);
                 auto& eps2 = m_macroscopic_properties->getepsilon_mf();
@@ -1353,7 +1353,7 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                     });
                 }
                 amrex::Real const resid = dmax.dataValue();
-                amrex::Print() << "[GAUSS] step " << gauss_check_step
+                amrex::Print() << "[GAUSS] step " << m_macroscopic_properties->gauss_check_step()
                                << "  max|div D - rho_medium| = " << resid << "\n";
             }
         }
