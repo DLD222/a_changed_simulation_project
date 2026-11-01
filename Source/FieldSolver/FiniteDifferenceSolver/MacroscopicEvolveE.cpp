@@ -333,35 +333,64 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
         // P2: exact exponential step for the conductive cells:
         //     E^{n+1} = M1 E^n + M2 (curlH - J)
         // Same curl expressions and the same sign for J as the Yee branch above.
-        if (has_sig_mat) {
-            // Cell-centred box (sigma's valid region): every sigma>0 cell gets the
-            // exponential step. The three staggered E components are read at the same
-            // index (collocated, O(h) at an interface) — see 技术路径 §7.7.
-            Box const& tb = mfi.tilebox(sigma_mf.ixType().toIntVect());
-            amrex::ParallelFor(tb, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                if (sigma_arr(i, j, k) <= amrex::Real(0.0)) { return; }
-                amrex::Real const cx = - T_Algo::DownwardDz(Hy, coefs_z, n_coefs_z, i, j, k,0)
-                                       + T_Algo::DownwardDy(Hz, coefs_y, n_coefs_y, i, j, k,0);
-                amrex::Real const cy =   T_Algo::DownwardDz(Hx, coefs_z, n_coefs_z, i, j, k,0)
-                                       - T_Algo::DownwardDx(Hz, coefs_x, n_coefs_x, i, j, k,0);
-                amrex::Real const cz =   T_Algo::DownwardDx(Hy, coefs_x, n_coefs_x, i, j, k,0)
-                                       - T_Algo::DownwardDy(Hx, coefs_y, n_coefs_y, i, j, k,0);
-                amrex::Real const rhs[3] = { cx - jx(i, j, k), cy - jy(i, j, k), cz - jz(i, j, k) };
-                amrex::Real const eold[3] = { Ex(i, j, k), Ey(i, j, k), Ez(i, j, k) };
-                amrex::Real enew[3] = { amrex::Real(0.0), amrex::Real(0.0), amrex::Real(0.0) };
-                for (int c = 0; c < 3; ++c) {
+
+    }
+
+    // Exponential step on the NODE layout: one top-level loop per E component (AMReX
+    // forbids nested MFIters, so this cannot live inside the BE loop above). Each node
+    // is written in its own component layout, so BOTH grid copies of a shared node get
+    // the same value -- this is what makes the result independent of where the sigma
+    // interface sits relative to the grid boundaries (V1, see 技术路径 §7.11 / §4.1).
+    if (macroscopic_properties->has_sigma_matrices()) {
+        Real const * const cxs = m_stencil_coefs_x.dataPtr();
+        auto const ncx = static_cast<int>(m_stencil_coefs_x.size());
+        Real const * const cys = m_stencil_coefs_y.dataPtr();
+        auto const ncy = static_cast<int>(m_stencil_coefs_y.size());
+        Real const * const czs = m_stencil_coefs_z.dataPtr();
+        auto const ncz = static_cast<int>(m_stencil_coefs_z.size());
+        for (int c = 0; c < 3; ++c) {
+            auto const& m1n = macroscopic_properties->get_sigma_m1_node_mf(c);
+            auto const& m2n = macroscopic_properties->get_sigma_m2_node_mf(c);
+            auto const& snn = macroscopic_properties->get_sigma_node_mf(c);
+            for (MFIter mfi_n(*Efield[c], TilingIfNotGPU()); mfi_n.isValid(); ++mfi_n) {
+                Box const& tb = mfi_n.validbox();
+                auto const mun = macroscopic_properties->getmu_mf().array(mfi_n);
+                auto const b0 = Bfield[0]->array(mfi_n);
+                auto const b1 = Bfield[1]->array(mfi_n);
+                auto const b2 = Bfield[2]->array(mfi_n);
+                auto const m1 = m1n.const_array(mfi_n);
+                auto const m2 = m2n.const_array(mfi_n);
+                auto const sn = snn.const_array(mfi_n);
+                auto const ex = Efield[0]->const_array(mfi_n);
+                auto const ey = Efield[1]->const_array(mfi_n);
+                auto const ez = Efield[2]->const_array(mfi_n);
+                auto const jx = Jfield[0]->const_array(mfi_n);
+                auto const jy = Jfield[1]->const_array(mfi_n);
+                auto const jz = Jfield[2]->const_array(mfi_n);
+                auto Ev = Efield[c]->array(mfi_n);
+                amrex::Array4<int> upd_c{};
+                if (eb_update_E[c] != nullptr) { upd_c = eb_update_E[c]->array(mfi_n); }
+                FieldAccessorMacroscopic const Hx(b0, mun);
+                FieldAccessorMacroscopic const Hy(b1, mun);
+                FieldAccessorMacroscopic const Hz(b2, mun);
+                amrex::ParallelFor(tb, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    if (sn(i, j, k, 0) <= amrex::Real(0.0)) { return; }
+                    amrex::Real const cx = - T_Algo::DownwardDz(Hy, czs, ncz, i, j, k,0)
+                                           + T_Algo::DownwardDy(Hz, cys, ncy, i, j, k,0);
+                    amrex::Real const cy =   T_Algo::DownwardDz(Hx, czs, ncz, i, j, k,0)
+                                           - T_Algo::DownwardDx(Hz, cxs, ncx, i, j, k,0);
+                    amrex::Real const cz =   T_Algo::DownwardDx(Hy, cxs, ncx, i, j, k,0)
+                                           - T_Algo::DownwardDy(Hx, cys, ncy, i, j, k,0);
+                    amrex::Real const rhs[3] = { cx - jx(i, j, k), cy - jy(i, j, k), cz - jz(i, j, k) };
+                    amrex::Real const eold[3] = { ex(i, j, k), ey(i, j, k), ez(i, j, k) };
+                    amrex::Real en = amrex::Real(0.0);
                     for (int d = 0; d < 3; ++d) {
-                        enew[c] += m1a(i, j, k, 3*c + d) * eold[d]
-                                 + m2a(i, j, k, 3*c + d) * rhs[d];
+                        en += m1(i, j, k, 3*c + d) * eold[d]
+                            + m2(i, j, k, 3*c + d) * rhs[d];
                     }
-                }
-                // Per-component EB/PEC mask: a masked component keeps E^n. Safe for the
-                // scalar-sigma path (M1/M2 diagonal -> components independent); a future
-                // tensor sigma must require all three unmasked or abort (see 技术路径).
-                if (!(update_Ex_arr && update_Ex_arr(i, j, k) == 0)) { Ex(i, j, k) = enew[0]; }
-                if (!(update_Ey_arr && update_Ey_arr(i, j, k) == 0)) { Ey(i, j, k) = enew[1]; }
-                if (!(update_Ez_arr && update_Ez_arr(i, j, k) == 0)) { Ez(i, j, k) = enew[2]; }
-            });
+                    if (!(upd_c && upd_c(i, j, k) == 0)) { Ev(i, j, k) = en; }
+                });
+            }
         }
     }
 }
