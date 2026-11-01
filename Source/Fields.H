@@ -38,6 +38,9 @@ namespace warpx::fields
         current_store, /**< Only used when doing subcycling with mesh refinement, for book-keeping of currents */
         rho_buf, /**< Particles that are close to the edge of the MR patch (i.e. in the deposition buffer) deposit to this field. */
         rho_fp,  /**< The charge density that is used as a source for the field solver (mostly for labframe electrostatic and PSATD) */
+        rho_medium_fp, /**< Conduction charge of the macroscopic medium (P2-b). Nodal, updated from
+                        *   div(sigma E) with the step-averaged current. Kept separate from rho_fp,
+                        *   which is overwritten by particle deposition every step. */
         F_fp, /**< Used for divE cleaning */
         G_fp, /**< Used for divB cleaning */
         phi_fp, /**< Obtained by the Poisson solver, for labframe electrostatic */

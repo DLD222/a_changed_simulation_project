@@ -1252,6 +1252,65 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
             dt[lev]);
     }
 
+    // P2-b: advance the medium conduction charge rho_medium BEFORE E is advanced,
+    // so that it uses E^n. Step-averaged current (matching the exponential sigma
+    // integrator): rho += -dt * div_h(sigma * c * E^n), c = (1 - e^{-a dt})/(a dt),
+    // a = sigma/eps. Nodal divergence, identical to the Gauss-law stencil, so that
+    // div D - rho_medium stays put (see 技术路径 §7.9 and gauss_toy.py).
+    if (m_em_solver_medium == MediumForEM::Macroscopic) {
+        auto* rho = m_fields.get(FieldType::rho_medium_fp, lev);
+        if (rho != nullptr) {
+            auto const& Ex = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{0}, lev);
+            auto const& Ez = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{2}, lev);
+            auto& sig = m_macroscopic_properties->getsigma_mf();
+            auto& eps = m_macroscopic_properties->getepsilon_mf();
+            amrex::Real const dx = Geom(lev).CellSize(0);
+            amrex::Real const dz = Geom(lev).CellSize(AMREX_SPACEDIM-1);
+            amrex::Real const dtl = a_dt;
+            // Seed rho_medium(0) = div_h(D(0)) on the very first call, so the test
+            // measures drift, not the initial-condition error. lev==0 is asserted above.
+            static bool rho_medium_seeded = false;
+            if (!rho_medium_seeded) {
+                for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+                    amrex::Box const& bx = mfi.tilebox(rho->ixType().toIntVect());
+                    auto const& rh = rho->array(mfi);
+                    auto const& ex = Ex->const_array(mfi);
+                    auto const& ez = Ez->const_array(mfi);
+                    auto const& ea = eps.const_array(mfi);
+                    amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                        rh(i,j,k) = (ea(i,j,k)*ex(i,j,k) - ea(i-1,j,k)*ex(i-1,j,k)) / dx
+                                  + (ea(i,j,k)*ez(i,j,k) - ea(i,j-1,k)*ez(i,j-1,k)) / dz;
+                    });
+                }
+                rho_medium_seeded = true;
+            }
+            for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+                amrex::Box const& bx = mfi.tilebox(rho->ixType().toIntVect());
+                auto const& rh = rho->array(mfi);
+                auto const& ex = Ex->const_array(mfi);
+                auto const& ez = Ez->const_array(mfi);
+                auto const& sa = sig.const_array(mfi);
+                auto const& ea = eps.const_array(mfi);
+                amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    // step-averaging factor for a = sigma/eps (scalar isotropic path)
+                    auto cfun = [=](amrex::Real s, amrex::Real e) {
+                        amrex::Real const a = s / e;
+                        return (a * dtl > amrex::Real(1e-30))
+                            ? (amrex::Real(1.0) - std::exp(-a * dtl)) / (a * dtl)
+                            : amrex::Real(1.0);
+                    };
+                    // Jx at x-face, Jz at z-face (same location as Dx/Dz), sigma
+                    // collocated at the cell centre (uniform-sigma test is exact).
+                    amrex::Real const Jx  = sa(i,j,k)   * cfun(sa(i,j,k),   ea(i,j,k))   * ex(i,j,k);
+                    amrex::Real const Jxm = sa(i-1,j,k) * cfun(sa(i-1,j,k), ea(i-1,j,k)) * ex(i-1,j,k);
+                    amrex::Real const Jz  = sa(i,j,k)   * cfun(sa(i,j,k),   ea(i,j,k))   * ez(i,j,k);
+                    amrex::Real const Jzm = sa(i,j-1,k) * cfun(sa(i,j-1,k), ea(i,j-1,k)) * ez(i,j-1,k);
+                    rh(i,j,k) += -dtl * ((Jx - Jxm) / dx + (Jz - Jzm) / dz);
+                });
+            }
+        }
+    }
+
     m_fdtd_solver_fp[lev]->MacroscopicEvolveE(
         m_fields,
         m_macroscopic_solver_algo,
@@ -1260,6 +1319,41 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
         m_fields.get_alldirs(FieldType::current_fp, lev),
         m_eb_update_E_fp[lev],
         a_dt, m_macroscopic_properties);
+
+    // P2-b diagnostic: after the E push, E and rho_medium are both at integer
+    // layer n, so div D - rho_medium is the same-layer Gauss residual. It must
+    // not grow (machine precision for the uniform, scalar case).
+    if (m_em_solver_medium == MediumForEM::Macroscopic) {
+        auto* rho = m_fields.get(FieldType::rho_medium_fp, lev);
+        if (rho != nullptr && WarpX::verbose > 0) {
+            static int gauss_check_step = 0;
+            ++gauss_check_step;
+            if (gauss_check_step % 20 == 0) {
+                auto const& Ex2 = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{0}, lev);
+                auto const& Ez2 = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{2}, lev);
+                auto& eps2 = m_macroscopic_properties->getepsilon_mf();
+                amrex::Real const dx = Geom(lev).CellSize(0);
+                amrex::Real const dz = Geom(lev).CellSize(AMREX_SPACEDIM-1);
+                amrex::Gpu::DeviceScalar<amrex::Real> dmax(amrex::Real(0.0));
+                amrex::Real* const pmax = dmax.dataPtr();
+                for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+                    amrex::Box const& bx = mfi.tilebox(rho->ixType().toIntVect());
+                    auto const& rh = rho->const_array(mfi);
+                    auto const& ex = Ex2->const_array(mfi);
+                    auto const& ez = Ez2->const_array(mfi);
+                    auto const& ea = eps2.const_array(mfi);
+                    amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                        amrex::Real const divD = (ea(i,j,k)*ex(i,j,k) - ea(i-1,j,k)*ex(i-1,j,k)) / dx
+                                               + (ea(i,j,k)*ez(i,j,k) - ea(i,j-1,k)*ez(i,j-1,k)) / dz;
+                        amrex::Gpu::Atomic::Max(pmax, std::abs(divD - rh(i,j,k)));
+                    });
+                }
+                amrex::Real const resid = dmax.dataValue();
+                amrex::Print() << "[GAUSS] step " << gauss_check_step
+                               << "  max|div D - rho_medium| = " << resid << "\n";
+            }
+        }
+    }
 
     if (do_pml && pml[lev]->ok()) {
         if (patch_type == PatchType::fine) {

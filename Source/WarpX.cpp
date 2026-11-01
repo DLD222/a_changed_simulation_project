@@ -2831,6 +2831,16 @@ WarpX::AllocLevelMFs (int lev, const BoxArray& ba, const DistributionMapping& dm
             rho_ncomps, ngRho, 0.0_rt);
     }
 
+    // P2-b: conduction charge of the macroscopic medium. Nodal (same location as
+    // div D), one component, zero initially. Separate from rho_fp on purpose:
+    // rho_fp is overwritten by particle deposition (SyncRho) every step, and the
+    // total charge is rho_particle + rho_medium.
+    if (m_em_solver_medium == MediumForEM::Macroscopic)
+    {
+        m_fields.alloc_init(FieldType::rho_medium_fp,
+            lev, amrex::convert(ba, rho_nodal_flag), dm, 1, ngRho, 0.0_rt);
+    }
+
     if (electrostatic_solver_id == ElectrostaticSolverAlgo::LabFrame ||
         electrostatic_solver_id == ElectrostaticSolverAlgo::LabFrameElectroMagnetostatic ||
         electrostatic_solver_id == ElectrostaticSolverAlgo::LabFrameEffectivePotential )
