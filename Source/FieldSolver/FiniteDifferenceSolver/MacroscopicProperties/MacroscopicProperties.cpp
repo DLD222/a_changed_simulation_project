@@ -236,6 +236,11 @@ MacroscopicProperties::AllocateLevelMFs (
     for (int c = 0; c < 3; ++c) {
         m_eps_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 6, ng_props);
         m_sigma_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 6, ng_props);
+        // node exponential matrices: 9 comps, no ghost needed (read at the same node)
+        m_m1_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 9, 0);
+        m_m2_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 9, 0);
+        m_m1_node[c]->setVal(amrex::Real(0.0));
+        m_m2_node[c]->setVal(amrex::Real(0.0));
         m_eps_node[c]->setVal(amrex::Real(0.0));
         m_sigma_node[c]->setVal(amrex::Real(0.0));
     }
@@ -651,6 +656,31 @@ MacroscopicProperties::InitSubpixelRows (
                 for (int c = 0; c < 9; ++c) { m1a(i,j,k,c) = MM1.m[c]; m2a(i,j,k,c) = MM2.m[c]; }
             });
         }
+        // Node-centred exponential matrices (per E component), built from the node
+        // eps (6 comps, tau-averaged) and node sigma (6 comps, staircase rule).
+        // Same sigma_exponential_matrices as the cell path -> tensor eps AND tensor
+        // sigma are allowed; no diag() shortcut is taken here.
+        for (int c = 0; c < 3; ++c) {
+            for (amrex::MFIter mfi(*m_m1_node[c]); mfi.isValid(); ++mfi) {
+                amrex::Box const& bx = mfi.validbox();
+                auto m1n = m_m1_node[c]->array(mfi);
+                auto m2n = m_m2_node[c]->array(mfi);
+                auto const en = m_eps_node[c]->const_array(mfi);
+                auto const sn = m_sigma_node[c]->const_array(mfi);
+                amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    warpx::subpixel::Mat3 E{}, S{};
+                    E.m[0]=en(i,j,k,0); E.m[4]=en(i,j,k,1); E.m[8]=en(i,j,k,2);
+                    E.m[1]=E.m[3]=en(i,j,k,3); E.m[2]=E.m[6]=en(i,j,k,4); E.m[5]=E.m[7]=en(i,j,k,5);
+                    S.m[0]=sn(i,j,k,0); S.m[4]=sn(i,j,k,1); S.m[8]=sn(i,j,k,2);
+                    S.m[1]=S.m[3]=sn(i,j,k,3); S.m[2]=S.m[6]=sn(i,j,k,4); S.m[5]=S.m[7]=sn(i,j,k,5);
+                    warpx::subpixel::Mat3 M1{}, M2{};
+                    warpx::subpixel::sigma_exponential_matrices(E, S, dt, M1, M2);
+                    for (int q = 0; q < 9; ++q) { m1n(i,j,k,q) = M1.m[q]; m2n(i,j,k,q) = M2.m[q]; }
+                });
+            }
+        }
+
+
         m_sigma_mat_ready = true;
         amrex::Print() << "[SIGMA-EXP] sigma_max=" << smax << " dt=" << dt
                        << "  M1/M2 filled where sigma>0\n";
