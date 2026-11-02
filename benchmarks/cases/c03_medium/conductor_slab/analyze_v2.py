@@ -84,13 +84,18 @@ def main():
     ap.add_argument("--dz", type=float, default=0.03125, help="cell size (1280^2 uses 0.015625)")
     ap.add_argument("--j0", type=int, default=323, help="first probe cell index")
     ap.add_argument("--dj", type=int, default=2, help="probe cell index step")
-    ap.add_argument("--fit-start", type=float, default=1.5,
+    ap.add_argument("--fit-start", type=float, default=2.0,
                     help="start the ln|E| fit at this many skin depths")
+    ap.add_argument("--z-list", type=float, nargs="*", default=None,
+                    help="explicit physical z of the probes (same for both grids)")
     ap.add_argument("--selftest", action="store_true")
     ARGS = ap.parse_args()
 
     global Z_PROBES
-    Z_PROBES = [-10.0 + (ARGS.j0 + k * ARGS.dj + 0.5) * ARGS.dz for k in range(7)]
+    if ARGS.z_list:
+        Z_PROBES = list(ARGS.z_list)
+    else:
+        Z_PROBES = [-10.0 + (ARGS.j0 + k * ARGS.dj + 0.5) * ARGS.dz for k in range(7)]
 
     if ARGS.selftest:
         return selftest()
@@ -106,10 +111,15 @@ def main():
     rel = d_meas / delta_th - 1.0
 
     print(f"k = {k.real:.6f} {k.imag:+.6f}i   delta_theory = {delta_th:.6f} m")
-    print(f"probe z / |E| (ln) :")
-    for z, a in zip(Z_PROBES, amps):
-        print(f"   z={z:7.4f}  |E|={a:.6e}  ln|E|={np.log(a):+.6f}"
-              + ("   <- excluded (z < 1.5 delta)" if not mask[Z_PROBES.index(z)] else ""))
+    # per-point residual against the fitted line (a (-1)^j pattern would indicate a
+    # grid-scale checkerboard from the collocated curl)
+    coef = np.polyfit(np.asarray(Z_PROBES)[mask], np.log(np.asarray(amps)[mask]), 1)
+    print("probe z / |E| / ln|E| / residual-to-fit:")
+    for kk, (z, a) in enumerate(zip(Z_PROBES, amps)):
+        fit = np.polyval(coef, z)
+        print(f"   z={z:7.4f}  |E|={a:.6e}  ln|E|={np.log(a):+.6f}  "
+              f"resid={np.log(a)-fit:+.6f}"
+              + ("   <- excluded" if not mask[kk] else ""))
     print(f"slope fit ({mask.sum()} points, z >= {ARGS.fit_start} delta): delta_meas = {d_meas:.6f} m   "
           f"rel {rel:+.3%}   resid {resid:.2e}")
     print("PASS" if abs(rel) <= ARGS.tol else "FAIL")
