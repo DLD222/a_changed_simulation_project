@@ -1,0 +1,64 @@
+# C03-E3: tensor-eps interface, normal incidence, s-polarisation.
+# Material 1 (z<0, vacuum) -> material 2 (z>0, diag(4,5,6) eps0).
+# s-pol (Ey) sees eps_yy = 5 eps0  ->  n2 = sqrt(5),  R = ((1-n2)/(1+n2))^2 = 0.1459.
+# Run this file twice: (A) as is  (B) without `interface_function` and with
+# `macroscopic.epsilon = epsilon0` (vacuum reference, used by analyze.py).
+# A third run with `macroscopic.epsilon2 = 5*eps0` (no tensor keys) checks that the
+# tensor path reduces to the scalar eps_yy path.
+max_step = 8000
+stop_time = 80.0e-9
+
+amr.n_cell = 480 480
+amr.max_grid_size = 64
+amr.max_level = 0
+geometry.dims = 2
+geometry.prob_lo = -6.0 -6.0
+geometry.prob_hi =  6.0  6.0
+
+warpx.cfl = 0.4
+warpx.use_filter = 0
+algo.maxwell_solver = yee
+algo.particle_shape = 1
+algo.em_solver_medium = macroscopic
+algo.macroscopic_subpixel = 1
+boundary.field_lo = periodic pec
+boundary.field_hi = periodic pec
+
+my_constants.eps0 = 8.8541878128e-12
+my_constants.c    = 299792458.0
+my_constants.lam  = 1.0
+my_constants.omega = 2.0*3.141592653589793*c/lam
+my_constants.tau  = 2.0e-9
+my_constants.E0   = 1.0e6
+
+# material 1: vacuum; material 2: diagonal tensor
+macroscopic.epsilon = eps0
+macroscopic.sigma = 0.01
+macroscopic.epsilon2_tensor_xx = 4.0*eps0
+macroscopic.epsilon2_tensor_yy = 5.0*eps0
+macroscopic.epsilon2_tensor_zz = 6.0*eps0
+macroscopic.epsilon2_tensor_xy = 0.0
+macroscopic.epsilon2_tensor_xz = 0.0
+macroscopic.epsilon2_tensor_yz = 0.0
+macroscopic.interface_function(x,y,z) = "-z"
+
+lasers.names = laser1
+laser1.position = 0.0 0.0 -3.0
+laser1.direction = 0.0 0.0 1.0
+laser1.polarization = 0.0 1.0 0.0
+laser1.e_max = 1.0e6
+laser1.wavelength = 1.0
+laser1.profile = parse_field_function
+laser1.field_function(X,Y,t) = "E0*exp(-((t-8.0*tau)/tau)^2)*cos(omega*t)"
+
+warpx.reduced_diags_names = qrefl qtrans
+qrefl.type = FieldProbe
+qrefl.intervals = 1
+qrefl.probe_geometry = Point
+qrefl.x_probe = 0.0
+qrefl.z_probe = -2.0
+qtrans.type = FieldProbe
+qtrans.intervals = 1
+qtrans.probe_geometry = Point
+qtrans.x_probe = 0.0
+qtrans.z_probe = 1.0
