@@ -1369,7 +1369,10 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                 Ex2->FillBoundary(Geom(lev).periodicity());
                 Ez2->FillBoundary(Geom(lev).periodicity());
                 amrex::Gpu::DeviceScalar<amrex::Real> dmax(amrex::Real(0.0));
+                amrex::Gpu::DeviceScalar<amrex::Real> ddiv(amrex::Real(0.0)), drho(amrex::Real(0.0));
                 amrex::Real* const pmax = dmax.dataPtr();
+                amrex::Real* const pdiv = ddiv.dataPtr();
+                amrex::Real* const prho = drho.dataPtr();
                 for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
                     amrex::Box const bx = mfi.tilebox(rho->ixType().toIntVect()).grow(-bnd_shrink);
                     auto const& rh = rho->const_array(mfi);
@@ -1380,11 +1383,15 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                         amrex::Real const divD = (ea(i,j,k)*ex(i,j,k) - ea(i-1,j,k)*ex(i-1,j,k)) / dx
                                                + (ea(i,j,k)*ez(i,j,k) - ea(i,j-1,k)*ez(i,j-1,k)) / dz;
                         amrex::Gpu::Atomic::Max(pmax, std::abs(divD - rh(i,j,k)));
+                        amrex::Gpu::Atomic::Max(pdiv, std::abs(divD));
+                        amrex::Gpu::Atomic::Max(prho, std::abs(rh(i,j,k)));
                     });
                 }
                 amrex::Real const resid = dmax.dataValue();
                 amrex::Print() << "[GAUSS] step " << m_macroscopic_properties->gauss_check_step()
-                               << "  max|div D - rho_medium| = " << resid << "\n";
+                               << "  max|div D - rho_medium| = " << resid
+                               << "  max|divD| = " << ddiv.dataValue()
+                               << "  max|rho| = " << drho.dataValue() << "\n";
             }
         }
     }
