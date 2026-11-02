@@ -191,6 +191,12 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             sn1 = macroscopic_properties->get_sigma_node_mf(1).const_array(mfi);
             sn2 = macroscopic_properties->get_sigma_node_mf(2).const_array(mfi);
         }
+        // Node-centred eps^-1 rows (row c of inv(eps_node[c])): the SAME subpixel eps the
+        // exponential step uses, so one field point never sees two different epsilons
+        // (decision 5.0w: cell Kottke rows gave 4/5/6 vs node tau 2.5/3.0/1.714).
+        amrex::Array4<amrex::Real const> ein0 = macroscopic_properties->get_eps_inv_node_mf(0).const_array(mfi);
+        amrex::Array4<amrex::Real const> ein1 = macroscopic_properties->get_eps_inv_node_mf(1).const_array(mfi);
+        amrex::Array4<amrex::Real const> ein2 = macroscopic_properties->get_eps_inv_node_mf(2).const_array(mfi);
 
         // Extract stencil coefficients
         Real const * const AMREX_RESTRICT coefs_x = m_stencil_coefs_x.dataPtr();
@@ -246,13 +252,12 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                                     - T_Algo::DownwardDx(Hz, coefs_x, n_coefs_x, i, j, k,0);
             amrex::Real const Dz =   T_Algo::DownwardDx(Hy, coefs_x, n_coefs_x, i, j, k,0)
                                     - T_Algo::DownwardDy(Hx, coefs_y, n_coefs_y, i, j, k,0);
-            amrex::Real const beta0 = beta * epsilon_interp;
-            amrex::Real const ix0 = has_sub ? eix(i,j,k,0) : amrex::Real(1.0)/epsilon_interp;
-            amrex::Real const ix1 = has_sub ? eix(i,j,k,1) : amrex::Real(0.0);
-            amrex::Real const ix2 = has_sub ? eix(i,j,k,2) : amrex::Real(0.0);
-            Ex(i, j, k) = alpha * Ex(i, j, k)
-                        + beta0 * ( ix0*Dx + ix1*Dy + ix2*Dz )
-                        - beta0 * ix0 * jx(i, j, k);
+            amrex::Real const ix0 = ein0(i,j,k,0);
+            amrex::Real const ix1 = ein0(i,j,k,1);
+            amrex::Real const ix2 = ein0(i,j,k,2);
+            Ex(i, j, k) = Ex(i, j, k)
+                        + dt * ( ix0*Dx + ix1*Dy + ix2*Dz )
+                        - dt * ix0 * jx(i, j, k);
         });
 
         // Ey update
@@ -284,13 +289,12 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                                     + T_Algo::DownwardDy(Hz, coefs_y, n_coefs_y, i, j, k,0);
             amrex::Real const Dz0 =   T_Algo::DownwardDx(Hy, coefs_x, n_coefs_x, i, j, k,0)
                                     - T_Algo::DownwardDy(Hx, coefs_y, n_coefs_y, i, j, k,0);
-            amrex::Real const beta0 = beta * epsilon_interp;
-            amrex::Real const iy0 = has_sub ? eiy(i,j,k,0) : amrex::Real(0.0);
-            amrex::Real const iy1 = has_sub ? eiy(i,j,k,1) : amrex::Real(1.0)/epsilon_interp;
-            amrex::Real const iy2 = has_sub ? eiy(i,j,k,2) : amrex::Real(0.0);
-            Ey(i, j, k) = alpha * Ey(i, j, k)
-                        + beta0 * ( iy0*Dx0 + iy1*Dy0 + iy2*Dz0 )
-                        - beta0 * iy1 * jy(i, j, k);
+            amrex::Real const iy0 = ein1(i,j,k,0);
+            amrex::Real const iy1 = ein1(i,j,k,1);
+            amrex::Real const iy2 = ein1(i,j,k,2);
+            Ey(i, j, k) = Ey(i, j, k)
+                        + dt * ( iy0*Dx0 + iy1*Dy0 + iy2*Dz0 )
+                        - dt * iy1 * jy(i, j, k);
         });
 
         // Ez update
@@ -322,13 +326,12 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                                     + T_Algo::DownwardDy(Hz, coefs_y, n_coefs_y, i, j, k,0);
             amrex::Real const Dy0 =   T_Algo::DownwardDz(Hx, coefs_z, n_coefs_z, i, j, k,0)
                                     - T_Algo::DownwardDx(Hz, coefs_x, n_coefs_x, i, j, k,0);
-            amrex::Real const beta0 = beta * epsilon_interp;
-            amrex::Real const iz0 = has_sub ? eiz(i,j,k,0) : amrex::Real(0.0);
-            amrex::Real const iz1 = has_sub ? eiz(i,j,k,1) : amrex::Real(0.0);
-            amrex::Real const iz2 = has_sub ? eiz(i,j,k,2) : amrex::Real(1.0)/epsilon_interp;
-            Ez(i, j, k) = alpha * Ez(i, j, k)
-                        + beta0 * ( iz0*Dx0 + iz1*Dy0 + iz2*Dz0 )
-                        - beta0 * iz2 * jz(i, j, k);
+            amrex::Real const iz0 = ein2(i,j,k,0);
+            amrex::Real const iz1 = ein2(i,j,k,1);
+            amrex::Real const iz2 = ein2(i,j,k,2);
+            Ez(i, j, k) = Ez(i, j, k)
+                        + dt * ( iz0*Dx0 + iz1*Dy0 + iz2*Dz0 )
+                        - dt * iz2 * jz(i, j, k);
         });
         // P2: exact exponential step for the conductive cells:
         //     E^{n+1} = M1 E^n + M2 (curlH - J)

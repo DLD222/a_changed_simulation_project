@@ -272,6 +272,8 @@ MacroscopicProperties::AllocateLevelMFs (
     for (int c = 0; c < 3; ++c) {
         m_eps_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 6, ng_props);
         m_sigma_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 6, ng_props);
+        m_eps_inv_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 3, ng_props);
+        m_eps_inv_node[c]->setVal(amrex::Real(0.0));
         // node exponential matrices: 9 comps, no ghost needed (read at the same node)
         m_m1_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 9, 0);
         m_m2_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 9, 0);
@@ -503,6 +505,26 @@ MacroscopicProperties::InitData (
                     for (int q = 0; q < 3; ++q) { sn(i,j,k,q) = sv; }
                     for (int q = 3; q < 6; ++q) { sn(i,j,k,q) = amrex::Real(0.0); }
                 }
+            });
+        }
+    }
+    // Node-centred inverse permittivity rows: row c of inv(eps_node[c]). Built here so
+    // the BE branch and the exponential step consume the SAME eps at a field point.
+    for (int c = 0; c < 3; ++c) {
+        for (amrex::MFIter mfi(*m_eps_node[c]); mfi.isValid(); ++mfi) {
+            amrex::Box const& b = mfi.validbox();
+            auto const en = m_eps_node[c]->const_array(mfi);
+            auto ein = m_eps_inv_node[c]->array(mfi);
+            amrex::ParallelFor(b, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                warpx::subpixel::Mat3 em{};
+                em.m[0] = en(i,j,k,0); em.m[4] = en(i,j,k,1); em.m[8] = en(i,j,k,2);
+                em.m[1] = em.m[3] = en(i,j,k,3);
+                em.m[2] = em.m[6] = en(i,j,k,4);
+                em.m[5] = em.m[7] = en(i,j,k,5);
+                warpx::subpixel::Mat3 const emi = warpx::subpixel::inv3_sym(em);
+                ein(i,j,k,0) = emi.m[3*c + 0];
+                ein(i,j,k,1) = emi.m[3*c + 1];
+                ein(i,j,k,2) = emi.m[3*c + 2];
             });
         }
     }

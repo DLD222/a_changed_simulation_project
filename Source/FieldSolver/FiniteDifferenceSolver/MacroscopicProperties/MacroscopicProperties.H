@@ -74,6 +74,7 @@ public:
     amrex::MultiFab& get_sigma_m1_node_mf (int c) {return (*m_m1_node[c]);}
     amrex::MultiFab& get_sigma_m2_node_mf (int c) {return (*m_m2_node[c]);}
     amrex::MultiFab& get_sigma_node_mf (int c) {return (*m_sigma_node[c]);}
+    amrex::MultiFab& get_eps_inv_node_mf (int c) {return (*m_eps_inv_node[c]);}
     /** return MultiFab, mu (permeability) of the medium. */
     amrex::MultiFab& getmu_mf  () {return (*m_mu_mf);}
 
@@ -186,6 +187,10 @@ private:
     std::unique_ptr<amrex::MultiFab> m_eps_tensor_mf;
     std::unique_ptr<amrex::MultiFab> m_eps2_tensor_mf;
     std::unique_ptr<amrex::MultiFab> m_sigma_tensor_mf;
+    /** Node-centred inverse permittivity rows (3 comps = row c of eps_node[c]^-1),
+     *  one MF per E component. The BE branch reads these instead of the cell Kottke
+     *  rows so that one field point sees ONE subpixel eps (decision 5.0w). */
+    std::unique_ptr<amrex::MultiFab> m_eps_inv_node[3];
     /** Per-component parser strings and parsers (constant or (x,y,z) function) */
     std::string m_str_eps_tensor[6];
     std::string m_str_eps2_tensor[6];
