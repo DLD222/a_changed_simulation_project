@@ -904,6 +904,34 @@ peak-time increments match c/sqrt(5) = 1.34e8 m/s (0.05 m per 0.37 ns)  ✓
 不是 bulk 的问题。
 
 
+### 5.0u **T1：sigma 张量输入（`sigma_tensor_xx..yz`）已落地**
+
+按 `SIGMA_TENSOR_AND_CONDUCTIVE_INTERFACE.md` §4 的 T1 实现：
+
+| 项 | 内容 |
+|---|---|
+| H | `m_has_sig_tensor`、`m_sig_tensor[6]`（GpuArray）、`m_sigma_tensor_mf`、6 个 parser |
+| 解析 | `sigma_tensor_xx/yy/zz/xy/xz/yz`，逐分量 parser（常数或 `(x,y,z)` 函数） |
+| 守卫 | key 存在但无解析 -> abort；全零 -> abort；**与标量 `sigma`/`sigma_function` 同时给出 -> abort** |
+| 存储 | cell-centred `m_sigma_tensor_mf`（6 分量，含 `ng_props` ghost），`AllocateLevelMFs` 分配、`InitData` 填充 |
+
+**实测（`xx = 0.01*(1+0.1z)`、`yy=0.02`、`zz=0.03`、`xz=0.004`）**：
+
+```
+[MACRO] sigma tensor: xx=0.01 yy=0.02 zz=0.03 xy=0 xz=0.004 yz=0
+[SIGT]  z=-1.84375   0.00815625 0.02 0.03 0 0.004 0
+        解析 0.01*(1+0.1*(-1.84375)) = 0.00815625   ✓（空间变化正确）
+冲突检查: `sigma = 0.1` + `sigma_tensor_*` -> "give either `sigma`/`sigma_function` or ..." abort  ✓
+P0 回归 (sigma=0, 512^2): R_flux=0.1335 T_flux=0.8513  逐位不变
+```
+
+**实现中抓到的一个真 bug**：tensor 填充块原本被 `if (m_has_eps_tensor || m_has_eps2_tensor)`
+守卫，只给 `sigma_tensor_*` 时整块被跳过（σ 张量保持 0）。守卫已改为包含 `m_has_sig_tensor`。
+
+**尚未消费**：`m_sigma_tensor_mf` 目前只是存好，node σ 规则（T2）和 `A = eps^-1 sigma`（T3）
+仍用标量 σ。所以 T1 不改变任何仿真结果（P0 逐位不变即为证据）。
+
+
 ## 5. 验证清单（缺一不算通过）## 5. 验证清单（缺一不算通过）
 
 ```

@@ -162,6 +162,42 @@ MacroscopicProperties::ReadParameters ()
         // eps1 + tensor eps2 (or the reverse) is a legitimate interface configuration;
         // the Kottke rows and fill_sigma_mats each fall back to diag(eps) per material.
     }
+    // Anisotropic conductivity: 6 parser entries (xx,yy,zz,xy,xz,yz), absolute S/m,
+    // same convention as the eps tensors. When present it replaces the scalar sigma;
+    // giving both is an error rather than a silent priority rule.
+    {
+        char const* ks[6] = {"sigma_tensor_xx","sigma_tensor_yy","sigma_tensor_zz",
+                             "sigma_tensor_xy","sigma_tensor_xz","sigma_tensor_yz"};
+        bool keys = false;
+        for (int i = 0; i < 6; ++i) { keys = keys || pp_macroscopic.contains(ks[i]); }
+        amrex::Real vs[6] = {0,0,0,0,0,0};
+        int ns = 0;
+        for (int i = 0; i < 6; ++i) {
+            if (pp_macroscopic.query(ks[i], m_str_sig_tensor[i])) {
+                m_sig_tensor_parser[i] = std::make_unique<amrex::Parser>(
+                    utils::parser::makeParser(m_str_sig_tensor[i], {"x","y","z"}));
+                vs[i] = m_sig_tensor_parser[i]->compile<3>()(amrex::Real(0.0), amrex::Real(0.0), amrex::Real(0.0));
+                ++ns;
+            }
+        }
+        if (keys) {
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(ns > 0,
+                "macroscopic: sigma_tensor_* is present but no component parsed; "
+                "refusing to fall back to the scalar sigma");
+            bool nz = false;
+            for (int i = 0; i < 6; ++i) { nz = nz || (vs[i] != amrex::Real(0.0)); }
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(nz,
+                "macroscopic: sigma_tensor_* parsed to all zeros");
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(!sigma_specified,
+                "macroscopic: give either `sigma`/`sigma_function` or `sigma_tensor_*`, not both");
+            for (int i = 0; i < 6; ++i) { m_sig_tensor[i] = vs[i]; }
+            m_has_sig_tensor = true;
+            amrex::Print() << "[MACRO] sigma tensor: xx=" << vs[0] << " yy=" << vs[1]
+                           << " zz=" << vs[2] << " xy=" << vs[3] << " xz=" << vs[4]
+                           << " yz=" << vs[5] << "\n";
+        }
+    }
+
 
 
     // Dielectric interface (independent of the PEC embedded boundaries).
@@ -253,6 +289,9 @@ MacroscopicProperties::AllocateLevelMFs (
     if (m_has_eps2_tensor) {
         m_eps2_tensor_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 6, ng_props);
         m_eps2_tensor_mf->setVal(amrex::Real(0.0));
+    }    if (m_has_sig_tensor) {
+        m_sigma_tensor_mf = std::make_unique<amrex::MultiFab>(ba, dmap, 6, ng_props);
+        m_sigma_tensor_mf->setVal(amrex::Real(0.0));
     }
 }
 
@@ -313,7 +352,7 @@ MacroscopicProperties::InitData (
     // Fill cell-centred anisotropic permittivity tensors (6 comps each) from the
     // per-component parsers (constant or (x,y,z) function). A component without a
     // parser stays 0, matching the previous GpuArray default.
-    if (m_has_eps_tensor || m_has_eps2_tensor) {
+    if (m_has_eps_tensor || m_has_eps2_tensor || m_has_sig_tensor) {
         auto const dxa = geom.CellSizeArray();
         amrex::Real const lox = geom.ProbDomain().lo(0);
         amrex::Real const loz = geom.ProbDomain().lo(AMREX_SPACEDIM-1);
@@ -333,6 +372,7 @@ MacroscopicProperties::InitData (
         for (int c = 0; c < 6; ++c) {
             if (m_has_eps_tensor) { fill_one(*m_eps_tensor_mf, c, m_eps_tensor_parser[c].get()); }
             if (m_has_eps2_tensor) { fill_one(*m_eps2_tensor_mf, c, m_eps2_tensor_parser[c].get()); }
+            if (m_has_sig_tensor) { fill_one(*m_sigma_tensor_mf, c, m_sig_tensor_parser[c].get()); }
         }
     }
 
