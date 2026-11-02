@@ -75,6 +75,8 @@ public:
     amrex::MultiFab& get_sigma_m2_node_mf (int c) {return (*m_m2_node[c]);}
     amrex::MultiFab& get_sigma_node_mf (int c) {return (*m_sigma_node[c]);}
     amrex::MultiFab& get_eps_inv_node_mf (int c) {return (*m_eps_inv_node[c]);}
+    amrex::MultiFab& get_j0_node_mf (int c) {return (*m_j0_node[c]);}
+    amrex::MultiFab& get_j1_node_mf (int c) {return (*m_j1_node[c]);}
     /** return MultiFab, mu (permeability) of the medium. */
     amrex::MultiFab& getmu_mf  () {return (*m_mu_mf);}
 
@@ -191,6 +193,13 @@ private:
      *  one MF per E component. The BE branch reads these instead of the cell Kottke
      *  rows so that one field point sees ONE subpixel eps (decision 5.0w). */
     std::unique_ptr<amrex::MultiFab> m_eps_inv_node[3];
+    /** Step-averaged conduction current operators at the nodes:
+     *    <J_c> = J0 E^n + J1 (curlH - J),   J0 = sigma C,  J1 = eps (I - C) eps^-1,
+     *    C = (1 - e^{-A dt}) (A dt)^-1,  A = eps^-1 sigma.
+     *  The eps (I-C) eps^-1 coefficient is NOT I - C when eps is a tensor
+     *  (see 5.0aa). 9 comps each, one MF per E component. */
+    std::unique_ptr<amrex::MultiFab> m_j0_node[3];
+    std::unique_ptr<amrex::MultiFab> m_j1_node[3];
     /** Per-component parser strings and parsers (constant or (x,y,z) function) */
     std::string m_str_eps_tensor[6];
     std::string m_str_eps2_tensor[6];

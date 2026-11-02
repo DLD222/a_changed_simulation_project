@@ -273,6 +273,10 @@ MacroscopicProperties::AllocateLevelMFs (
         m_eps_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 6, ng_props);
         m_sigma_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 6, ng_props);
         m_eps_inv_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 3, ng_props);
+        m_j0_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 9, ng_props);
+        m_j1_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 9, ng_props);
+        m_j0_node[c]->setVal(amrex::Real(0.0));
+        m_j1_node[c]->setVal(amrex::Real(0.0));
         m_eps_inv_node[c]->setVal(amrex::Real(0.0));
         // node exponential matrices: 9 comps, no ghost needed (read at the same node)
         m_m1_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 9, 0);
@@ -798,6 +802,8 @@ MacroscopicProperties::InitSubpixelRows (
                 auto m2n = m_m2_node[c]->array(mfi);
                 auto const en = m_eps_node[c]->const_array(mfi);
                 auto const sn = m_sigma_node[c]->const_array(mfi);
+                auto j0n = m_j0_node[c]->array(mfi);
+                auto j1n = m_j1_node[c]->array(mfi);
                 amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                     warpx::subpixel::Mat3 E{}, S{};
                     E.m[0]=en(i,j,k,0); E.m[4]=en(i,j,k,1); E.m[8]=en(i,j,k,2);
@@ -807,9 +813,19 @@ MacroscopicProperties::InitSubpixelRows (
                     warpx::subpixel::Mat3 M1{}, M2{};
                     warpx::subpixel::sigma_exponential_matrices(E, S, dt, M1, M2);
                     for (int q = 0; q < 9; ++q) { m1n(i,j,k,q) = M1.m[q]; m2n(i,j,k,q) = M2.m[q]; }
+                    // <J_c> = J0 E + J1 (curlH - J),  J0 = sigma C,  J1 = eps (I-C) eps^-1
+                    warpx::subpixel::Mat3 C{};
+                    warpx::subpixel::sigma_step_average(E, S, dt, C);
+                    warpx::subpixel::Mat3 const I = warpx::subpixel::identity();
+                    warpx::subpixel::Mat3 const ImC = warpx::subpixel::add(I, warpx::subpixel::scaled(C, amrex::Real(-1.0)));
+                    warpx::subpixel::Mat3 const Einv = warpx::subpixel::inv3_sym(E);
+                    warpx::subpixel::Mat3 const J0 = warpx::subpixel::mul(S, C);
+                    warpx::subpixel::Mat3 const J1 = warpx::subpixel::mul(E, warpx::subpixel::mul(ImC, Einv));
+                    for (int q = 0; q < 9; ++q) { j0n(i,j,k,q) = J0.m[q]; j1n(i,j,k,q) = J1.m[q]; }
                 });
             }
         }
+
 
 
 
