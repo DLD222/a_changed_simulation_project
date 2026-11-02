@@ -194,6 +194,13 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
         // Node-centred eps^-1 rows (row c of inv(eps_node[c])): the SAME subpixel eps the
         // exponential step uses, so one field point never sees two different epsilons
         // (decision 5.0w: cell Kottke rows gave 4/5/6 vs node tau 2.5/3.0/1.714).
+        // Temporary A/B switch (controlled experiment, one binary):
+        //   WARPX_YEE_NODE_EPS set   -> node tau eps^-1 rows (option B)
+        //   unset                    -> cell Kottke eps^-1 rows (option A, the old path)
+        // default = node tau (the committed behaviour); set WARPX_YEE_CELL_EPS to get
+        // the old cell-Kottke path for the A/B comparison.
+        bool const use_node_eps = (std::getenv("WARPX_YEE_CELL_EPS") == nullptr);
+
         amrex::Array4<amrex::Real const> ein0 = macroscopic_properties->get_eps_inv_node_mf(0).const_array(mfi);
         amrex::Array4<amrex::Real const> ein1 = macroscopic_properties->get_eps_inv_node_mf(1).const_array(mfi);
         amrex::Array4<amrex::Real const> ein2 = macroscopic_properties->get_eps_inv_node_mf(2).const_array(mfi);
@@ -252,9 +259,9 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                                     - T_Algo::DownwardDx(Hz, coefs_x, n_coefs_x, i, j, k,0);
             amrex::Real const Dz =   T_Algo::DownwardDx(Hy, coefs_x, n_coefs_x, i, j, k,0)
                                     - T_Algo::DownwardDy(Hx, coefs_y, n_coefs_y, i, j, k,0);
-            amrex::Real const ix0 = ein0(i,j,k,0);
-            amrex::Real const ix1 = ein0(i,j,k,1);
-            amrex::Real const ix2 = ein0(i,j,k,2);
+            amrex::Real const ix0 = use_node_eps || !has_sub ? ein0(i,j,k,0) : eix(i,j,k,0);
+            amrex::Real const ix1 = use_node_eps || !has_sub ? ein0(i,j,k,1) : eix(i,j,k,1);
+            amrex::Real const ix2 = use_node_eps || !has_sub ? ein0(i,j,k,2) : eix(i,j,k,2);
             Ex(i, j, k) = Ex(i, j, k)
                         + dt * ( ix0*Dx + ix1*Dy + ix2*Dz )
                         - dt * ix0 * jx(i, j, k);
@@ -289,9 +296,9 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                                     + T_Algo::DownwardDy(Hz, coefs_y, n_coefs_y, i, j, k,0);
             amrex::Real const Dz0 =   T_Algo::DownwardDx(Hy, coefs_x, n_coefs_x, i, j, k,0)
                                     - T_Algo::DownwardDy(Hx, coefs_y, n_coefs_y, i, j, k,0);
-            amrex::Real const iy0 = ein1(i,j,k,0);
-            amrex::Real const iy1 = ein1(i,j,k,1);
-            amrex::Real const iy2 = ein1(i,j,k,2);
+            amrex::Real const iy0 = use_node_eps || !has_sub ? ein1(i,j,k,0) : eiy(i,j,k,0);
+            amrex::Real const iy1 = use_node_eps || !has_sub ? ein1(i,j,k,1) : eiy(i,j,k,1);
+            amrex::Real const iy2 = use_node_eps || !has_sub ? ein1(i,j,k,2) : eiy(i,j,k,2);
             Ey(i, j, k) = Ey(i, j, k)
                         + dt * ( iy0*Dx0 + iy1*Dy0 + iy2*Dz0 )
                         - dt * iy1 * jy(i, j, k);
@@ -326,9 +333,9 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                                     + T_Algo::DownwardDy(Hz, coefs_y, n_coefs_y, i, j, k,0);
             amrex::Real const Dy0 =   T_Algo::DownwardDz(Hx, coefs_z, n_coefs_z, i, j, k,0)
                                     - T_Algo::DownwardDx(Hz, coefs_x, n_coefs_x, i, j, k,0);
-            amrex::Real const iz0 = ein2(i,j,k,0);
-            amrex::Real const iz1 = ein2(i,j,k,1);
-            amrex::Real const iz2 = ein2(i,j,k,2);
+            amrex::Real const iz0 = use_node_eps || !has_sub ? ein2(i,j,k,0) : eiz(i,j,k,0);
+            amrex::Real const iz1 = use_node_eps || !has_sub ? ein2(i,j,k,1) : eiz(i,j,k,1);
+            amrex::Real const iz2 = use_node_eps || !has_sub ? ein2(i,j,k,2) : eiz(i,j,k,2);
             Ez(i, j, k) = Ez(i, j, k)
                         + dt * ( iz0*Dx0 + iz1*Dy0 + iz2*Dz0 )
                         - dt * iz2 * jz(i, j, k);
