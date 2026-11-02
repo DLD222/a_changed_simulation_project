@@ -429,6 +429,7 @@ MacroscopicProperties::InitData (
             auto const sc  = m_sigma_mf->const_array(mfi);
             auto const et1 = has_t1 ? m_eps_tensor_mf->const_array(mfi)  : amrex::Array4<amrex::Real const>{};
             auto const et2 = has_t2 ? m_eps2_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+            auto const st1 = m_has_sig_tensor ? m_sigma_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
             auto en = m_eps_node[c]->array(mfi);
             auto sn = m_sigma_node[c]->array(mfi);
             amrex::Box const cbox = m_eps_mf->boxArray()[mfi.index()];
@@ -446,6 +447,17 @@ MacroscopicProperties::InitData (
                         ? amrex::Real(0.0) : amrex::Real(0.5) * (sL + sR));
                 amrex::Real const xn = xlo_n + amrex::Real(i) * dx_n;
                 amrex::Real const zn = zlo_n + amrex::Real(j) * dz_n;
+                amrex::Real nrmv[3] = {amrex::Real(0.0), amrex::Real(0.0), amrex::Real(1.0)};
+                if (iface_on_n) {
+                    amrex::Real const hh0 = amrex::Real(0.5) * amrex::min(dx_n, dz_n);
+                    amrex::Real const gx0 = phi_n(xn + hh0, amrex::Real(0.0), zn)
+                                         - phi_n(xn - hh0, amrex::Real(0.0), zn);
+                    amrex::Real const gz0 = phi_n(xn, amrex::Real(0.0), zn + hh0)
+                                         - phi_n(xn, amrex::Real(0.0), zn - hh0);
+                    amrex::Real const gn0 = std::sqrt(gx0*gx0 + gz0*gz0);
+                    if (gn0 > amrex::Real(1e-30)) { nrmv[0] = gx0/gn0; nrmv[2] = gz0/gn0; }
+                }
+
                 bool const m1L = iface_on_n ? (phi_n(xn, amrex::Real(0.0), zn - amrex::Real(0.25)*dz_n) > amrex::Real(0.0)) : true;
                 bool const m1R = iface_on_n ? (phi_n(xn, amrex::Real(0.0), zn + amrex::Real(0.25)*dz_n) > amrex::Real(0.0)) : true;
                 warpx::subpixel::Mat3 eL{}, eR{};
@@ -504,6 +516,53 @@ MacroscopicProperties::InitData (
                     en(i,j,k,3) = en3.m[1]; en(i,j,k,4) = en3.m[2]; en(i,j,k,5) = en3.m[5];
                     for (int q = 0; q < 3; ++q) { sn(i,j,k,q) = sv; }
                     for (int q = 3; q < 6; ++q) { sn(i,j,k,q) = amrex::Real(0.0); }
+                }
+
+                // ---- node sigma TENSOR (S1) -------------------------------------
+                // bulk (no interface): the local cell tensor, exactly.
+                // interface: work in the frame(n) of SubpixelTensor.H (axis 0 = n,
+                // axes 1,2 = tangential) and apply the scalar staircase blockwise:
+                //   tangential 2x2 : 0 if EITHER side is vacuum (E_t continuity, no
+                //                    over-damping), otherwise the arithmetic mean;
+                //   normal         : harmonic (series conduction, J_n continuous);
+                //   coupling       : arithmetic (recorded as first order).
+                if (m_has_sig_tensor) {
+                    warpx::subpixel::Mat3 sL{}, sR{};
+                    sL.m[0]=st1(ii,jm,k,0); sL.m[4]=st1(ii,jm,k,1); sL.m[8]=st1(ii,jm,k,2);
+                    sL.m[1]=sL.m[3]=st1(ii,jm,k,3); sL.m[2]=sL.m[6]=st1(ii,jm,k,4); sL.m[5]=sL.m[7]=st1(ii,jm,k,5);
+                    sR.m[0]=st1(ii,jp,k,0); sR.m[4]=st1(ii,jp,k,1); sR.m[8]=st1(ii,jp,k,2);
+                    sR.m[1]=sR.m[3]=st1(ii,jp,k,3); sR.m[2]=sR.m[6]=st1(ii,jp,k,4); sR.m[5]=sR.m[7]=st1(ii,jp,k,5);
+                    warpx::subpixel::Mat3 s3{};
+                    if (!iface_on_n) {
+                        s3 = m1L ? sL : sR;
+                    } else {
+                        warpx::subpixel::Mat3 const R  = warpx::subpixel::frame(nrmv);
+                        warpx::subpixel::Mat3 const Rt = warpx::subpixel::transpose(R);
+                        warpx::subpixel::Mat3 const sLh = warpx::subpixel::mul(warpx::subpixel::mul(Rt, sL), R);
+                        warpx::subpixel::Mat3 const sRh = warpx::subpixel::mul(warpx::subpixel::mul(Rt, sR), R);
+                        bool const vacL = (sLh.m[0]==0.0 && sLh.m[4]==0.0 && sLh.m[8]==0.0
+                                           && sLh.m[1]==0.0 && sLh.m[2]==0.0 && sLh.m[5]==0.0);
+                        bool const vacR = (sRh.m[0]==0.0 && sRh.m[4]==0.0 && sRh.m[8]==0.0
+                                           && sRh.m[1]==0.0 && sRh.m[2]==0.0 && sRh.m[5]==0.0);
+                        warpx::subpixel::Mat3 sh{};
+                        // normal (0,0): harmonic
+                        amrex::Real const a0 = sLh.m[0], b0 = sRh.m[0];
+                        sh.m[0] = (a0 + b0 > amrex::Real(0.0)) ? amrex::Real(2.0)*a0*b0/(a0+b0) : amrex::Real(0.0);
+                        // tangential 2x2: vacuum priority, else arithmetic
+                        for (int q : {4, 8, 5}) {   // (1,1), (2,2), (1,2)
+                            sh.m[q] = (vacL || vacR) ? amrex::Real(0.0)
+                                                     : amrex::Real(0.5) * (sLh.m[q] + sRh.m[q]);
+                        }
+                        sh.m[7] = sh.m[5];
+                        // coupling: arithmetic
+                        for (int q : {1, 2, 6}) {
+                            sh.m[q] = amrex::Real(0.5) * (sLh.m[q] + sRh.m[q]);
+                        }
+                        sh.m[3] = sh.m[1];
+                        s3 = warpx::subpixel::mul(warpx::subpixel::mul(R, sh), Rt);
+                    }
+                    sn(i,j,k,0) = s3.m[0]; sn(i,j,k,1) = s3.m[4]; sn(i,j,k,2) = s3.m[8];
+                    sn(i,j,k,3) = s3.m[1]; sn(i,j,k,4) = s3.m[2]; sn(i,j,k,5) = s3.m[5];
                 }
             });
         }
@@ -634,7 +693,10 @@ MacroscopicProperties::InitSubpixelRows (
     // cells only (see 技术路径 §7.7). Called from every branch that fills the rows.
     auto fill_sigma_mats = [&]() {
         amrex::Real const smax = m_sigma_mf ? m_sigma_mf->max(0) : amrex::Real(0.0);
-        if (smax <= amrex::Real(0.0)) { return; }
+        // A sigma TENSOR also has to build the matrices: the scalar-field gate below
+        // would otherwise skip everything and the tensor would silently do nothing.
+        bool const any_sigma = (smax > amrex::Real(0.0)) || m_has_sig_tensor;
+        if (!any_sigma) { return; }
         m_sigma_m1 = std::make_unique<amrex::MultiFab>(ba, dm, 9, 0);
         m_sigma_m2 = std::make_unique<amrex::MultiFab>(ba, dm, 9, 0);
         m_sigma_m1->setVal(amrex::Real(0.0));
@@ -664,9 +726,18 @@ MacroscopicProperties::InitSubpixelRows (
             auto const& ea  = epsm.const_array(mfi);
             auto const& et1 = has_tensor_e  ? m_eps_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
             auto const& et2 = has_tensor_e2 ? m_eps2_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
+            auto const& st1c = m_has_sig_tensor ? m_sigma_tensor_mf->const_array(mfi) : amrex::Array4<amrex::Real const>{};
             amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                 amrex::Real const sv = sa(i,j,k);
-                if (sv <= amrex::Real(0.0)) { return; }
+                if (!m_has_sig_tensor && sv <= amrex::Real(0.0)) { return; }
+                // A = eps^-1 sigma with the LOCAL sigma (tensor input) or the scalar field.
+                warpx::subpixel::Mat3 S{};
+                if (m_has_sig_tensor) {
+                    S(0,0)=st1c(i,j,k,0); S(1,1)=st1c(i,j,k,1); S(2,2)=st1c(i,j,k,2);
+                    S(0,1)=S(1,0)=st1c(i,j,k,3); S(0,2)=S(2,0)=st1c(i,j,k,4); S(1,2)=S(2,1)=st1c(i,j,k,5);
+                } else {
+                    S(0,0) = sv; S(1,1) = sv; S(2,2) = sv;
+                }
                 // fill fraction of material 1 (same phi sub-sampling as the Kottke rows)
                 amrex::Real f1 = amrex::Real(1.0);
                 if (iface_on) {
@@ -711,8 +782,6 @@ MacroscopicProperties::InitSubpixelRows (
                     amrex::Real const ev = f1 * ea(i,j,k) + w2 * eps2s;
                     E(0,0) = ev; E(1,1) = ev; E(2,2) = ev;
                 }
-                warpx::subpixel::Mat3 S{};
-                S(0,0) = sv; S(1,1) = sv; S(2,2) = sv;
                 warpx::subpixel::Mat3 MM1{}, MM2{};
                 warpx::subpixel::sigma_exponential_matrices(E, S, dt, MM1, MM2);
                 for (int c = 0; c < 9; ++c) { m1a(i,j,k,c) = MM1.m[c]; m2a(i,j,k,c) = MM2.m[c]; }
@@ -741,6 +810,7 @@ MacroscopicProperties::InitSubpixelRows (
                 });
             }
         }
+
 
 
 
