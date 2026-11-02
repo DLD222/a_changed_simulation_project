@@ -1261,6 +1261,7 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
         auto* rho = m_fields.get(FieldType::rho_medium_fp, lev);
         if (rho != nullptr) {
             auto const& Ex = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{0}, lev);
+            auto const& Ey = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{1}, lev);
             auto const& Ez = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{2}, lev);
             auto& sig = m_macroscopic_properties->getsigma_mf();
             auto& eps = m_macroscopic_properties->getepsilon_mf();
@@ -1285,16 +1286,33 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                 // residual check reads the same ghosts after the E push; they must be the
                 // wrapped values, otherwise the boundary residual is O(div D), not 0.
                 Ex->FillBoundary(Geom(lev).periodicity());
+                Ey->FillBoundary(Geom(lev).periodicity());
                 Ez->FillBoundary(Geom(lev).periodicity());
                 for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
                     amrex::Box const bx = mfi.tilebox(rho->ixType().toIntVect()).grow(-bnd_shrink);
                     auto const& rh = rho->array(mfi);
                     auto const& ex = Ex->const_array(mfi);
                     auto const& ez = Ez->const_array(mfi);
-                    auto const& ea = eps.const_array(mfi);
+                    auto const& ey = Ey->const_array(mfi);
+                    // D must be built with the SAME effective eps the E update uses:
+                    // the node-centred eps (tau at an interface, local tensor in the bulk).
+                    // Using m_eps_mf (material 1 only) made the interface divD 146x too
+                    // small (see 5.0ad).
+                    auto const& en0 = m_macroscopic_properties->get_eps_node_mf(0).const_array(mfi);
+                    auto const& en2 = m_macroscopic_properties->get_eps_node_mf(2).const_array(mfi);
                     amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                        rh(i,j,k) = (ea(i,j,k)*ex(i,j,k) - ea(i-1,j,k)*ex(i-1,j,k)) / dx
-                                  + (ea(i,j,k)*ez(i,j,k) - ea(i,j-1,k)*ez(i,j-1,k)) / dz;
+                        auto Dx = [&](int ii, int jj) {
+                            return en0(ii,jj,k,0)*ex(ii,jj,k)
+                                 + en0(ii,jj,k,3)*ey(ii,jj,k)
+                                 + en0(ii,jj,k,4)*ez(ii,jj,k);
+                        };
+                        auto Dz = [&](int ii, int jj) {
+                            return en2(ii,jj,k,4)*ex(ii,jj,k)
+                                 + en2(ii,jj,k,5)*ey(ii,jj,k)
+                                 + en2(ii,jj,k,2)*ez(ii,jj,k);
+                        };
+                        rh(i,j,k) = (Dx(i,j) - Dx(i-1,j)) / dx
+                                  + (Dz(i,j) - Dz(i,j-1)) / dz;
                     });
                 }
                 m_macroscopic_properties->set_rho_medium_seeded();
@@ -1363,6 +1381,7 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
             ++m_macroscopic_properties->gauss_check_step();
             if (m_macroscopic_properties->gauss_check_step() % 20 == 0) {
                 auto const& Ex2 = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{0}, lev);
+                auto const& Ey2 = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{1}, lev);
                 auto const& Ez2 = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{2}, lev);
                 auto& eps2 = m_macroscopic_properties->getepsilon_mf();
                 amrex::Real const dx = Geom(lev).CellSize(0);
@@ -1385,10 +1404,23 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                     auto const& rh = rho->const_array(mfi);
                     auto const& ex = Ex2->const_array(mfi);
                     auto const& ez = Ez2->const_array(mfi);
-                    auto const& ea = eps2.const_array(mfi);
+                    auto const& ey = Ey2->const_array(mfi);
+                    // same effective eps as the E update (node-centred) -- see 5.0ad
+                    auto const& en0 = m_macroscopic_properties->get_eps_node_mf(0).const_array(mfi);
+                    auto const& en2 = m_macroscopic_properties->get_eps_node_mf(2).const_array(mfi);
                     amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                        amrex::Real const divD = (ea(i,j,k)*ex(i,j,k) - ea(i-1,j,k)*ex(i-1,j,k)) / dx
-                                               + (ea(i,j,k)*ez(i,j,k) - ea(i,j-1,k)*ez(i,j-1,k)) / dz;
+                        auto Dx = [&](int ii, int jj) {
+                            return en0(ii,jj,k,0)*ex(ii,jj,k)
+                                 + en0(ii,jj,k,3)*ey(ii,jj,k)
+                                 + en0(ii,jj,k,4)*ez(ii,jj,k);
+                        };
+                        auto Dz = [&](int ii, int jj) {
+                            return en2(ii,jj,k,4)*ex(ii,jj,k)
+                                 + en2(ii,jj,k,5)*ey(ii,jj,k)
+                                 + en2(ii,jj,k,2)*ez(ii,jj,k);
+                        };
+                        amrex::Real const divD = (Dx(i,j) - Dx(i-1,j)) / dx
+                                               + (Dz(i,j) - Dz(i,j-1)) / dz;
                         amrex::Gpu::Atomic::Max(pmax, std::abs(divD - rh(i,j,k)));
                         amrex::Gpu::Atomic::Max(pdiv, std::abs(divD));
                         amrex::Gpu::Atomic::Max(prho, std::abs(rh(i,j,k)));
