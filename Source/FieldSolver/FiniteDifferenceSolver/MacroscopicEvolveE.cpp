@@ -361,7 +361,9 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
         for (int c = 0; c < 3; ++c) {
             auto const& m1n = macroscopic_properties->get_sigma_m1_node_mf(c);
             auto const& m2n = macroscopic_properties->get_sigma_m2_node_mf(c);
-            auto const& snn = macroscopic_properties->get_sigma_node_mf(c);
+            auto const& snn = macroscopic_properties->get_sigma_node_mf(c);            auto const& j0m = macroscopic_properties->get_j0_node_mf(c);
+            auto const& j1m = macroscopic_properties->get_j1_node_mf(c);
+            auto& jcm = macroscopic_properties->get_jcond_mf(c);
             for (MFIter mfi_n(*Efield[c], TilingIfNotGPU()); mfi_n.isValid(); ++mfi_n) {
                 Box const& tb = mfi_n.validbox();
                 auto const mun = macroscopic_properties->getmu_mf().array(mfi_n);
@@ -370,7 +372,9 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                 auto const b2 = Bfield[2]->array(mfi_n);
                 auto const m1 = m1n.const_array(mfi_n);
                 auto const m2 = m2n.const_array(mfi_n);
-                auto const sn = snn.const_array(mfi_n);
+                auto const sn = snn.const_array(mfi_n);                auto const j0 = j0m.const_array(mfi_n);
+                auto const j1 = j1m.const_array(mfi_n);
+                auto Jc = jcm.array(mfi_n);
                 auto const ex = Efield[0]->const_array(mfi_n);
                 auto const ey = Efield[1]->const_array(mfi_n);
                 auto const ez = Efield[2]->const_array(mfi_n);
@@ -399,6 +403,14 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                             + m2(i, j, k, 3*c + d) * rhs[d];
                     }
                     if (!(upd_c && upd_c(i, j, k) == 0)) { Ev(i, j, k) = en; }
+                    // step-averaged conduction current at this node:
+                    //   <J_c> = J0 E^n + J1 (curlH - J),  J1 = eps (I-C) eps^-1
+                    amrex::Real jcv = amrex::Real(0.0);
+                    for (int d = 0; d < 3; ++d) {
+                        jcv += j0(i, j, k, 3*c + d) * eold[d]
+                             + j1(i, j, k, 3*c + d) * rhs[d];
+                    }
+                    Jc(i, j, k) = jcv;
                 });
             }
         }

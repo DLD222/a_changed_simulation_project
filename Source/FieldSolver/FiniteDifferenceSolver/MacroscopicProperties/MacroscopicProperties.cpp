@@ -275,6 +275,8 @@ MacroscopicProperties::AllocateLevelMFs (
         m_eps_inv_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 3, ng_props);
         m_j0_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 9, ng_props);
         m_j1_node[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 9, ng_props);
+        m_jcond[c] = std::make_unique<amrex::MultiFab>(amrex::convert(ba, en[c]), dmap, 1, 0);
+        m_jcond[c]->setVal(amrex::Real(0.0));
         m_j0_node[c]->setVal(amrex::Real(0.0));
         m_j1_node[c]->setVal(amrex::Real(0.0));
         m_eps_inv_node[c]->setVal(amrex::Real(0.0));

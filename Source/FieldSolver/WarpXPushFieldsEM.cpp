@@ -1299,32 +1299,6 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                 }
                 m_macroscopic_properties->set_rho_medium_seeded();
             }
-            for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
-                amrex::Box const bx = mfi.tilebox(rho->ixType().toIntVect()).grow(-bnd_shrink);
-                auto const& rh = rho->array(mfi);
-                auto const& ex = Ex->const_array(mfi);
-                auto const& ez = Ez->const_array(mfi);
-                auto const& sa = sig.const_array(mfi);
-                auto const& ea = eps.const_array(mfi);
-                amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                    // step-averaging factor for a = sigma/eps (scalar isotropic path)
-                    auto cfun = [=](amrex::Real s, amrex::Real e) {
-                        amrex::Real const x = (s / e) * dtl;   // = a*dt
-                        if (x < amrex::Real(1e-8)) {
-                            // series avoids the 1 - exp(-x) cancellation for small x
-                            return amrex::Real(1.0) - amrex::Real(0.5) * x + x * x / amrex::Real(6.0);
-                        }
-                        return (amrex::Real(1.0) - std::exp(-x)) / x;
-                    };
-                    // Jx at x-face, Jz at z-face (same location as Dx/Dz), sigma
-                    // collocated at the cell centre (uniform-sigma test is exact).
-                    amrex::Real const Jx  = sa(i,j,k)   * cfun(sa(i,j,k),   ea(i,j,k))   * ex(i,j,k);
-                    amrex::Real const Jxm = sa(i-1,j,k) * cfun(sa(i-1,j,k), ea(i-1,j,k)) * ex(i-1,j,k);
-                    amrex::Real const Jz  = sa(i,j,k)   * cfun(sa(i,j,k),   ea(i,j,k))   * ez(i,j,k);
-                    amrex::Real const Jzm = sa(i,j-1,k) * cfun(sa(i,j-1,k), ea(i,j-1,k)) * ez(i,j-1,k);
-                    rh(i,j,k) += -dtl * ((Jx - Jxm) / dx + (Jz - Jzm) / dz);
-                });
-            }
         }
     }
 
@@ -1344,6 +1318,39 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
         for (int c = 0; c < 3; ++c) {
             m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{c}, lev)
                 ->FillBoundaryAndSync(Geom(lev).periodicity());
+        }
+    }
+    // P2-b: advance rho_medium with the STEP-AVERAGED conduction current that the
+    // exponential step just produced:
+    //     <J_c> = J0 E^n + J1 (curlH - J),   J0 = sigma C,  J1 = eps (I-C) eps^-1
+    //     rho^{n+1} = rho^n - dt div_h(<J_c>)
+    // Using only sigma c E^n is correct only for a uniform medium: at a sigma/eps
+    // interface C varies in space, so the curl-driven term has a non-zero divergence
+    // and IS the conduction charge there (see 技术文档 5.0z / 5.0aa).
+    if (m_em_solver_medium == MediumForEM::Macroscopic) {
+        auto* rho = m_fields.get(FieldType::rho_medium_fp, lev);
+        if (rho != nullptr) {
+            auto& Jcx = m_macroscopic_properties->get_jcond_mf(0);
+            auto& Jcz = m_macroscopic_properties->get_jcond_mf(2);
+            amrex::Real const dx = Geom(lev).CellSize(0);
+            amrex::Real const dz = Geom(lev).CellSize(AMREX_SPACEDIM-1);
+            amrex::Real const dtl = a_dt;
+            amrex::IntVect bnd_shrink = amrex::IntVect::TheZeroVector();
+            for (int d = 0; d < AMREX_SPACEDIM; ++d) {
+                if (!Geom(lev).periodicity().isPeriodic(d)) { bnd_shrink[d] = 1; }
+            }
+            Jcx.FillBoundary(Geom(lev).periodicity());
+            Jcz.FillBoundary(Geom(lev).periodicity());
+            for (amrex::MFIter mfi(*rho, amrex::TilingIfNotGPU()); mfi.isValid(); ++mfi) {
+                amrex::Box const bx = mfi.tilebox(rho->ixType().toIntVect()).grow(-bnd_shrink);
+                auto const& rh = rho->array(mfi);
+                auto const& jx = Jcx.const_array(mfi);
+                auto const& jz = Jcz.const_array(mfi);
+                amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
+                    rh(i,j,k) += -dtl * ((jx(i,j,k) - jx(i-1,j,k)) / dx
+                                      + (jz(i,j,k) - jz(i,j-1,k)) / dz);
+                });
+            }
         }
     }
 

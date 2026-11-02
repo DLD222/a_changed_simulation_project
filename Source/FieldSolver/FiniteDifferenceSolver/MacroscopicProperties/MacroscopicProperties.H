@@ -77,6 +77,7 @@ public:
     amrex::MultiFab& get_eps_inv_node_mf (int c) {return (*m_eps_inv_node[c]);}
     amrex::MultiFab& get_j0_node_mf (int c) {return (*m_j0_node[c]);}
     amrex::MultiFab& get_j1_node_mf (int c) {return (*m_j1_node[c]);}
+    amrex::MultiFab& get_jcond_mf (int c) {return (*m_jcond[c]);}
     /** return MultiFab, mu (permeability) of the medium. */
     amrex::MultiFab& getmu_mf  () {return (*m_mu_mf);}
 
@@ -200,6 +201,10 @@ private:
      *  (see 5.0aa). 9 comps each, one MF per E component. */
     std::unique_ptr<amrex::MultiFab> m_j0_node[3];
     std::unique_ptr<amrex::MultiFab> m_j1_node[3];
+    /** Step-averaged conduction current <J_c> per E component, on the SAME
+     *  stagger as E_c so that rho += -dt div(<J_c>) uses the Gauss stencil.
+     *  Zero at sigma = 0 nodes (the exponential step never writes them). */
+    std::unique_ptr<amrex::MultiFab> m_jcond[3];
     /** Per-component parser strings and parsers (constant or (x,y,z) function) */
     std::string m_str_eps_tensor[6];
     std::string m_str_eps2_tensor[6];
