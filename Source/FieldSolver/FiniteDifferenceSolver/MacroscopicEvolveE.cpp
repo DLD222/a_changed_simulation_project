@@ -358,14 +358,18 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
         auto const ncy = static_cast<int>(m_stencil_coefs_y.size());
         Real const * const czs = m_stencil_coefs_z.dataPtr();
         auto const ncz = static_cast<int>(m_stencil_coefs_z.size());
-        // Snapshot E^n: the three components share nodes, and the loop below writes
-        // E^{n+1} in place. Without the snapshot, c=1 and c=2 would read the ALREADY
-        // UPDATED c=0 / c=1 values (Gauss-Seidel instead of Jacobi), which injects an
-        // O(A dt) error per step and is invisible when M1 is diagonal (5.0ae).
-        amrex::Vector<amrex::MultiFab> eold_mf(3);
+        // Snapshot E^n as a COLLOCATED 3-component field, on each component's own
+        // layout (so the reads inside the loop are same-ba, no cross-stagger access).
+        // Without this the loop below is Gauss-Seidel (c=1,2 read the already updated
+        // c=0,1), which injects O(A dt) per step and is invisible while M1 is diagonal
+        // (5.0ae). ParallelCopy is a pure index copy: all three E components live on
+        // the same index space, only their box TYPES differ.
+        amrex::Vector<amrex::MultiFab> eold3(3);
         for (int c = 0; c < 3; ++c) {
-            eold_mf[c].define(Efield[c]->boxArray(), Efield[c]->DistributionMap(), 1, 0);
-            amrex::MultiFab::Copy(eold_mf[c], *Efield[c], 0, 0, 1, 0);
+            eold3[c].define(Efield[c]->boxArray(), Efield[c]->DistributionMap(), 3, 0);
+            for (int d = 0; d < 3; ++d) {
+                eold3[c].ParallelCopy(*Efield[d], 0, d, 1);
+            }
         }
         for (int c = 0; c < 3; ++c) {
             auto const& m1n = macroscopic_properties->get_sigma_m1_node_mf(c);
@@ -384,9 +388,7 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                 auto const sn = snn.const_array(mfi_n);                auto const j0 = j0m.const_array(mfi_n);
                 auto const j1 = j1m.const_array(mfi_n);
                 auto Jc = jcm.array(mfi_n);
-                auto const ex = eold_mf[0].const_array(mfi_n);
-                auto const ey = eold_mf[1].const_array(mfi_n);
-                auto const ez = eold_mf[2].const_array(mfi_n);
+                auto const eo = eold3[c].const_array(mfi_n);   // (i,j,k,d) = E_d^n
                 auto const jx = Jfield[0]->const_array(mfi_n);
                 auto const jy = Jfield[1]->const_array(mfi_n);
                 auto const jz = Jfield[2]->const_array(mfi_n);
@@ -405,7 +407,7 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                     amrex::Real const cz =   T_Algo::DownwardDx(Hy, cxs, ncx, i, j, k,0)
                                            - T_Algo::DownwardDy(Hx, cys, ncy, i, j, k,0);
                     amrex::Real const rhs[3] = { cx - jx(i, j, k), cy - jy(i, j, k), cz - jz(i, j, k) };
-                    amrex::Real const eold[3] = { ex(i, j, k), ey(i, j, k), ez(i, j, k) };
+                    amrex::Real const eold[3] = { eo(i, j, k, 0), eo(i, j, k, 1), eo(i, j, k, 2) };
                     amrex::Real en = amrex::Real(0.0);
                     for (int d = 0; d < 3; ++d) {
                         en += m1(i, j, k, 3*c + d) * eold[d]
