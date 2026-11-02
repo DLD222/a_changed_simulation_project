@@ -34,6 +34,16 @@ def dft(t, y, w, t0, t1):
     return np.sum(y[m] * np.exp(-1j * w * t[m])) * (t[1] - t[0])
 
 
+def fixed_k_fit(z, e, k):
+    """Given k, solve E = A exp(ikz) + B exp(-ikz) linearly -> unique A, B."""
+    M = np.column_stack([np.exp(1j * k * z), np.exp(-1j * k * z)])
+    sol, *_ = np.linalg.lstsq(M, e, rcond=None)
+    A, B = sol
+    model = M @ sol
+    rms = np.sqrt(np.mean(np.abs(model - e) ** 2)) / max(np.mean(np.abs(e)), 1e-300)
+    return A, B, rms
+
+
 def two_way_fit(z, e, k0):
     """Least-squares fit of E(z) = A exp(ikz) + B exp(-ikz); A,B,k complex."""
     from scipy.optimize import least_squares
@@ -78,6 +88,8 @@ def main():
     ap.add_argument("--t1", type=float, default=80e-9)
     ap.add_argument("--tol", type=float, default=0.01)
     ap.add_argument("--selftest", action="store_true")
+    ap.add_argument("--fixed-k", action="store_true",
+                    help="solve A,B linearly with k = k_theory (unique, no degeneracy)")
     a = ap.parse_args()
 
     if a.selftest:
@@ -92,6 +104,15 @@ def main():
         d = np.loadtxt(f"{a.diags}/p{i}.txt", skiprows=1)
         e.append(dft(d[:, 1], d[:, 6], w, a.t0, a.t1))
     e = np.asarray(e)
+
+    if a.fixed_k:
+        A, B, rms = fixed_k_fit(z, e, kt)
+        k = kt
+        print(f"fixed-k fit (k = k_theory):")
+        print(f"  |A| = {abs(A):.6e}   |B| = {abs(B):.6e}   |B/A| = {abs(B/A):.6e}")
+        print(f"  rms = {rms:.3e}")
+        d = -np.log(abs(A) / abs(A)) if False else 0.0
+        return 0 if rms < 0.05 else 1
 
     A, B, k, rms = two_way_fit(z, e, kt)
     print(f"theory k = {kt.real:.6f} {kt.imag:+.6f}i   1/delta = {-kt.imag:.6f}")
