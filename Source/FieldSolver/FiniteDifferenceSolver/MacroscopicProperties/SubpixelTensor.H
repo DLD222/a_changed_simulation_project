@@ -293,6 +293,40 @@ Mat3 mat3_fun (const amrex::Real lam[3], const amrex::Real V[9], int kind, amrex
     return out;
 }
 
+/** Step-average operator of the conduction current.
+ *
+ *      C = (1 - exp(-A dt)) (A dt)^-1,      A = eps^-1 sigma                 (1)
+ *
+ *  The exact solution with f = curlH - J frozen over the step is
+ *      E(t) = e^{-A t} E^n + (1 - e^{-A t}) A^-1 eps^-1 f,
+ *      <E>  = C E^n + (I - C) A^-1 eps^-1 f,
+ *  so the step-averaged conduction current is
+ *      <J_c> = sigma <E> = sigma C E^n + (I - C) f,                           (2)
+ *  where the second form uses sigma A^-1 eps^-1 = I.  Dropping the (I-C) f term
+ *  is only valid when C is constant (uniform medium), because then its divergence
+ *  vanishes; at a sigma/eps interface it does NOT, and that term is exactly the
+ *  conduction charge the wave drives there (see 技术路径 5.0z).
+ *
+ *  In the B basis (B = eps^{-1/2} sigma eps^{-1/2}, A = eps^{-1/2} B eps^{1/2}):
+ *      C = eps^{-1/2} [(1 - exp(-B dt)) / (B dt)] eps^{1/2}.
+ */
+AMREX_GPU_HOST_DEVICE AMREX_FORCE_INLINE
+void sigma_step_average (const Mat3& eps, const Mat3& sigma, amrex::Real dt, Mat3& C)
+{
+    amrex::Real lam[3], V[9];
+    jacobi_eigh(eps, lam, V);
+    Mat3 const eps_h  = mat3_fun(lam, V, 0, dt);
+    Mat3 const eps_ih = mat3_fun(lam, V, 1, dt);
+    Mat3 const B = mul(eps_ih, mul(sigma, eps_ih));
+    amrex::Real lb[3], Vb[9];
+    jacobi_eigh(B, lb, Vb);
+    // (1 - exp(-B dt)) / B = dt * C_B
+    Mat3 const eint = mat3_fun(lb, Vb, 3, dt);
+    Mat3 Cin{};
+    for (int i = 0; i < 9; ++i) { Cin.m[i] = eint.m[i] / dt; }
+    C = mul(eps_ih, mul(Cin, eps_h));
+}
+
 /** The two static operators of the sigma exponential step.
  *
  *      A  = eps^-1 sigma,  M1 = exp(-A dt),  M2 = (1 - exp(-A dt)) A^-1 eps^-1
