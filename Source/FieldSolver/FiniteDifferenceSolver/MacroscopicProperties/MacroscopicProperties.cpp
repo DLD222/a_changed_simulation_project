@@ -681,6 +681,7 @@ MacroscopicProperties::InitSubpixelRows (
         }
 
 
+
         m_sigma_mat_ready = true;
         amrex::Print() << "[SIGMA-EXP] sigma_max=" << smax << " dt=" << dt
                        << "  M1/M2 filled where sigma>0\n";
