@@ -263,7 +263,7 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             // sigma > 0 cells are handled by the exponential step below; leaving them
             // untouched here keeps E^n available for the matrix product.
             // node sigma drives both the skip and the damping (§4.1)
-            amrex::Real const sigma_node = has_sig_mat ? sn1(i, j, k, 0) : amrex::Real(0.0);
+            amrex::Real const sigma_node = has_sig_mat ? sn1(i, j, k, 1) : amrex::Real(0.0);
             if (has_sig_mat && sigma_node > amrex::Real(0.0)) { return; }   // exponential step handles it
 
             // Interpolate conductivity, sigma, to Ey position on the grid
@@ -301,7 +301,7 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
             // sigma > 0 cells are handled by the exponential step below; leaving them
             // untouched here keeps E^n available for the matrix product.
             // node sigma drives both the skip and the damping (§4.1)
-            amrex::Real const sigma_node = has_sig_mat ? sn2(i, j, k, 0) : amrex::Real(0.0);
+            amrex::Real const sigma_node = has_sig_mat ? sn2(i, j, k, 2) : amrex::Real(0.0);
             if (has_sig_mat && sigma_node > amrex::Real(0.0)) { return; }   // exponential step handles it
 
             // Interpolate conductivity, sigma, to Ez position on the grid
@@ -374,7 +374,7 @@ void FiniteDifferenceSolver::MacroscopicEvolveECartesian (
                 FieldAccessorMacroscopic const Hy(b1, mun);
                 FieldAccessorMacroscopic const Hz(b2, mun);
                 amrex::ParallelFor(tb, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
-                    if (sn(i, j, k, 0) <= amrex::Real(0.0)) { return; }
+                    if (sn(i, j, k, c) <= amrex::Real(0.0)) { return; }
                     amrex::Real const cx = - T_Algo::DownwardDz(Hy, czs, ncz, i, j, k,0)
                                            + T_Algo::DownwardDy(Hz, cys, ncy, i, j, k,0);
                     amrex::Real const cy =   T_Algo::DownwardDz(Hx, czs, ncz, i, j, k,0)

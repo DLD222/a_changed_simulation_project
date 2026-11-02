@@ -479,7 +479,7 @@ MacroscopicProperties::InitData (
                 } else if (!iface_on_n) {
                     for (int q = 0; q < 6; ++q) {
                         en(i,j,k,q) = m1L
-                            ? (has_t1 ? et1(ii,jp,k,q) : amrex::Real(0.0))
+                            ? (has_t1 ? et1(ii,jp,k,q) : (q < 3 ? ec(ii,jp,k) : amrex::Real(0.0)))
                             : (has_t2 ? et2(ii,jp,k,q) : (q < 3 ? eps2_sc : amrex::Real(0.0)));
                     }
                     for (int q = 0; q < 3; ++q) { sn(i,j,k,q) = sv; }
@@ -904,6 +904,50 @@ MacroscopicProperties::InitSubpixelRows (
     fill_rows(*m_eps_inv_x, 0);
     fill_rows(*m_eps_inv_y, 1);
     fill_rows(*m_eps_inv_z, 2);
+
+    // Debug: compare the two epsilon discretisations at a node (collocated index).
+    //   node branch (exponential): eps_bar from m_eps_node[c], inverted here
+    //   Yee branch (sigma==0)    : chi^-1 row from m_eps_inv_*[c]
+    // Set WARPX_DEBUG_NODE="i,j" to print. Temporary; remove after 5.0x.
+    if (char const* dbg = std::getenv("WARPX_DEBUG_NODE")) {
+        int di = 0, dj = 0;
+        if (std::sscanf(dbg, "%d,%d", &di, &dj) == 2) {
+            amrex::Print() << "[EPSNODE] (i,j)=(" << di << "," << dj << ")\n";
+            for (int c = 0; c < 3; ++c) {
+                auto const& node_mf = *m_eps_node[c];
+                auto const& row_mf = (c == 0) ? *m_eps_inv_x : (c == 1 ? *m_eps_inv_y : *m_eps_inv_z);
+                amrex::Real en6[6] = {0,0,0,0,0,0};
+                bool found_n = false;
+                for (amrex::MFIter mfi_n(node_mf); mfi_n.isValid() && !found_n; ++mfi_n) {
+                    if (!mfi_n.validbox().contains(di, dj, 0)) { continue; }
+                    auto const en = node_mf.const_array(mfi_n);
+                    for (int q = 0; q < 6; ++q) { en6[q] = en(di,dj,0,q); }
+                    found_n = true;
+                }
+                if (!found_n) { continue; }
+                warpx::subpixel::Mat3 e3{};
+                e3.m[0]=en6[0]; e3.m[4]=en6[1]; e3.m[8]=en6[2];
+                e3.m[1]=e3.m[3]=en6[3]; e3.m[2]=e3.m[6]=en6[4]; e3.m[5]=e3.m[7]=en6[5];
+                warpx::subpixel::Mat3 const chi_n = warpx::subpixel::inv3_sym(e3);
+                for (amrex::MFIter mfi_r(row_mf); mfi_r.isValid(); ++mfi_r) {
+                    if (!mfi_r.validbox().contains(di, dj, 0)) { continue; }
+                    auto const ch = row_mf.const_array(mfi_r);
+                    amrex::Real ch3[3] = {ch(di,dj,0), ch(di,dj,1), ch(di,dj,2)};
+                    amrex::Print() << "  c=" << c
+                        << " eps6=" << en6[0] << " " << en6[1] << " " << en6[2]
+                        << " " << en6[3] << " " << en6[4] << " " << en6[5] << "\n"
+                        << "       node_chi^-1_row=" << chi_n.m[3*c+0] << " " << chi_n.m[3*c+1] << " " << chi_n.m[3*c+2] << "\n"
+                        << "       yee_row (cell)  =" << ch3[0] << " " << ch3[1] << " " << ch3[2] << "\n";
+                    for (int d = 0; d < 3; ++d) {
+                        amrex::Real const a = chi_n.m[3*c+d], b = ch3[d];
+                        amrex::Real const rel = (std::abs(b) > 0) ? std::abs(a-b)/std::abs(b) : std::abs(a);
+                        amrex::Print() << "       rel[" << d << "]=" << rel << "\n";
+                    }
+                    break;
+                }
+            }
+        }
+    }
 
     m_subpixel = true;
 
