@@ -1,8 +1,9 @@
 name: Weekly update
 
 on:
-  schedule:
-    - cron: "0 9 * * 1"  # every Monday at 1:00am PST (9:00am UTC)
+  # Scheduled runs disabled in this fork; trigger manually via workflow_dispatch.
+  # schedule:
+  #   - cron: "0 9 * * 1"  # every Monday at 1:00am PST (9:00am UTC)
   workflow_dispatch:
 
 permissions:
