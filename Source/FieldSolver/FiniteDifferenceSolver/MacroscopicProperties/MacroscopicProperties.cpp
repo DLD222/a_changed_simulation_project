@@ -427,6 +427,13 @@ MacroscopicProperties::InitData (
     amrex::Real const dx_n = geom.CellSize(0);
     amrex::Real const dz_n = geom.CellSize(AMREX_SPACEDIM-1);
     amrex::Real const eps2_sc = (m_epsilon2 > amrex::Real(0.0)) ? m_epsilon2 : m_epsilon;
+    // Temporary mechanism-probe switch (default 0 = physical harmonic normal mean):
+    //   1 = arithmetic normal mean, giving the interface node conduction even when
+    //       one side is an exact insulator. Used only to decide whether "interface
+    //       node sigma = 0" is what biases the p-pol reflection (5.0aw).
+    int sig_arith_opt = 0;
+    amrex::ParmParse("macroscopic").query("sigma_normal_arith", sig_arith_opt);
+    bool const sig_arith_norm = (sig_arith_opt != 0);
     for (int c = 0; c < 3; ++c) {
         bool const normal = (c == 2);
         for (amrex::MFIter mfi(*m_eps_node[c]); mfi.isValid(); ++mfi) {
@@ -447,8 +454,16 @@ MacroscopicProperties::InitData (
                 int const jm = amrex::max(j - 1, jlo_dom);
                 int const jp = amrex::min(j, jhi_dom);
                 amrex::Real const sL = sc(ii, jm, k), sR = sc(ii, jp, k);
+                // Mechanism-probe flag (NOT physics): use the arithmetic normal mean
+                // instead of the harmonic one, so the interface node keeps conduction
+                // when one side is an exact insulator (sigma1 = 0). The harmonic mean is
+                // the physically correct series average; this flag only answers whether
+                // "interface node has sigma = 0" is what biases the p-pol reflection.
+                amrex::Real const sv_norm = sig_arith_norm
+                    ? amrex::Real(0.5) * (sL + sR)
+                    : ((sL + sR > amrex::Real(0.0)) ? amrex::Real(2.0)*sL*sR/(sL+sR) : amrex::Real(0.0));
                 amrex::Real const sv = normal
-                    ? ((sL + sR > amrex::Real(0.0)) ? amrex::Real(2.0)*sL*sR/(sL+sR) : amrex::Real(0.0))
+                    ? sv_norm
                     : ((sL <= amrex::Real(0.0) || sR <= amrex::Real(0.0))
                         ? amrex::Real(0.0) : amrex::Real(0.5) * (sL + sR));
                 amrex::Real const xn = xlo_n + amrex::Real(i) * dx_n;
