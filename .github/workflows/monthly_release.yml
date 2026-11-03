@@ -40,8 +40,13 @@ jobs:
           git push -f origin monthly_release
       - name: Open pull request
         run: |
-          gh pr create \
-            --base development \
-            --body "Automated via .github/workflows/monthly_release.yml." \
-            --label "component: third party" \
-            --title "Release: WarpX ${{ env.DATE }}"
+          if gh pr view monthly_release --json number >/dev/null 2>&1; then
+            gh pr edit monthly_release \
+              --body "Automated via .github/workflows/monthly_release.yml." \
+              --title "Release: WarpX ${{ env.DATE }}"
+          else
+            gh pr create \
+              --base "${{ github.event.repository.default_branch }}" \
+              --body "Automated via .github/workflows/monthly_release.yml." \
+              --title "Release: WarpX ${{ env.DATE }}"
+          fi

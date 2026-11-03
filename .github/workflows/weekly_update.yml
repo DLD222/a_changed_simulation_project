@@ -37,8 +37,12 @@ jobs:
           git push -f origin weekly_update
       - name: Open pull request
         run: |
-          gh pr create \
-            --base development \
-            --body "Automated via .github/workflows/weekly_update.yml." \
-            --label "component: third party" \
-            --title "Dependencies: weekly update"
+          if gh pr view weekly_update --json number >/dev/null 2>&1; then
+            gh pr edit weekly_update \
+              --body "Automated via .github/workflows/weekly_update.yml."
+          else
+            gh pr create \
+              --base "${{ github.event.repository.default_branch }}" \
+              --body "Automated via .github/workflows/weekly_update.yml." \
+              --title "Dependencies: weekly update"
+          fi
