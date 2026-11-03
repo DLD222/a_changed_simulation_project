@@ -167,6 +167,49 @@ M1/M2：节点打印 vs Python expm（≤1e-10）
 
 ---
 
+#### L5 已定稿的检查清单（L5b：张量界面 + p-pol）
+
+**前置**：L5a（bulk 旋转 ε/σ）已过（轨迹 vs `expm` 9.2e-14）；`eold3` 快照修复只影响非对角 M1，S5/E6/P0 逐位。
+
+**配置**
+
+```
+ε2 = R_y(30°) diag(4,5,6) Rᵀ ε0（或绕 x/z 的旋转，使 ε_yy/ε_xz 变化）
+σ：标量（sigma_function 只在材料 2，preflight 必须 PASS）或旋转张量
+界面 z=0；p-pol 入射 30°（Ex/Ez 都有 → 检验 3×3 D 与界面 q_s）
+16/32 ppw；真空参考跑同几何
+```
+
+**1) rhs 跨布局核对（本次必须做）**
+
+```
+在界面附近一个 node：
+  code 的 cx/cy/cz（B/J 通过 E_c 的 mfi 读）
+  vs host 端用"同 index、各分量自己的布局"取出的 curlH
+判据：逐分量 ≤1e-12（若不等 → B/J 的 box/ghost 覆盖问题）
+```
+
+**2) R/T**
+
+```
+参考：Berreman 4×4（各向异性、有损、分层）或对角退化的标量 Fresnel
+判据：R_p/T_p ≤5%；R+T+A=1 ±5%
+```
+
+**3) q_s 与 Gauss**
+
+```
+q_s(t)/q_s(0) 与 n·(D2−D1) 比：≤5%
+界面 max|∇·D − (ρ_p+ρ_medium)|：~1e-13（D 用 node 张量 3×3）
+```
+
+**4) 边界/有效性门**
+
+```
+preflight PASS（σ 只在材料 2、路径无衰减、探针 valid box）
+E_n≠0、B≠0（否则测不到 off-diagonal/rhs）
+```
+
 ### L6 — 面电荷与连续性（ρ_medium）
 
 #### 6.1 精确推导：法向 E 的弛豫**不需要准静态**
@@ -353,6 +396,9 @@ python3 verify_divergence.py plt00010 --eps <ε> --rho-field rho_medium
 | J0/J1 | `1e-10`（vs Python） | 张量 ε+σ |
 | L6 界面 Gauss | `4e-26`（x periodic + z PEC，E_z 均匀 B=0） | 判据 1e-13 |
 | L6 q_s(t) | 2.36 ns −10.6%（O(h) 待网格确认）/ 11.8 ns −0.4% / 23.6 ns 0.0% | 界面 τ ε 的一阶性 |
+| L4（旋转 σ，bulk） | `1.04e-13`（vs expm，100 步） | eold3 修复后 |
+| L5a（旋转 ε+σ，bulk） | `9.2e-14` | eold3 修复后 |
+| eold3 修复回归 | S5/E6/P0 **逐位** | 只影响非对角 M1 |
 
 ---
 
