@@ -1,25 +1,26 @@
-# 场 / 等离子体 / 介质 模块化架构建议（建议稿，非决定）
+# 场 / 等离子体 / 介质 模块化与通用可扩展架构建议（建议稿，非决定）
 
-> 本文是**建议稿**：给出目标、可选实现路径、扩展配方与注意事项，供决策参考。
-> 文中标注“建议 / 可选 / 待定”的地方**不是拍板**；最终取舍由项目负责人决定。
+> 本文是**建议稿**：给出目标、通用扩展机制、可选实现路径、风险与决策点。
+> 文中“建议 / 可选 / 待定”均**不是拍板**；最终取舍由项目负责人决定。
+> 说明：文中的“引力”“相变”等只是**成本量级**的示意，**不是**架构针对的对象；
+> 架构面向的是“任意新场 / 任意新耦合 / 任意新物种模型 / 任意新材料过程”。
 > 日期：2026-11-04 · 基于 `~/WarpX_fluid` 源码阅读与公开文献。
 
 ---
 
 ## 0. 文档定位
 
-- **目的**：为“场、等离子体、介质分块 + 极致可扩展”提供一份可讨论的架构方案。
-- **不是**：实现承诺、时间表、或对现有代码的否定。
-- **读者**：项目负责人、后续实现者。
-- **原则**：不推倒 AMReX/WarpX；以适配器与 strangler 方式渐进；每个阶段保持现有回归。
+- **目的**：为“场、等离子体、介质分块 + 通用可扩展”提供可讨论的方案。
+- **不是**：实现承诺、时间表、对现有代码的否定，或针对某两个示例的专门设计。
+- **原则**：不推倒 AMReX/WarpX；适配器 + strangler 渐进；每阶段保持现有回归。
 
 ---
 
-## 1. 目的与范围
+## 1. 目的：通用可扩展，而不是“给两个例子开口子”
 
-### 1.1 要解决的问题
+### 1.1 问题
 
-当前扩展一个新物理（例如“粒子间引力”“介质相变/气化”）通常需要同时改动：
+当前扩展任何新物理（不限于引力/相变）通常要同时改：
 
 ```
 WarpX.H/.cpp（加成员、加调用）
@@ -31,28 +32,46 @@ Initialization/（新输入解析）
 Diagnostics/（新输出）
 ```
 
-即“一处物理、多处改动”，违反开闭原则，也让回归面变大。
+即“一处物理、多处改动”，扩展成本随需求种类线性增长，回归面也随之扩大。
 
 ### 1.2 目标（建议）
 
-1. **统一等离子体块**：粒子与流体（含 5/10 矩）在同一模块内，共享物种、EOS、闭合、摩擦/碰撞、沉积/收集接口。
-2. **场块插件化**：Maxwell（Yee/PSATD/CKC）、Poisson（静电/引力）、其他场方程都是可替换插件。
-3. **介质块独立**：ε/σ/μ、子网格/界面、面电荷、色散（ADE）、**相变**（气化/沸腾）都是可替换的材料模型。
-4. **耦合层显式**：相互作用（电磁、引力、碰撞/摩擦）是独立单元，有明确的 deposit/solve/gather 端口。
-5. **扩展成本**：新增一个“场 + 力”的相互作用，理想情况下只写 **2 个 .cpp**（一个场方程 + 一个相互作用），加注册与输入；新增一个材料过程（相变），理想情况下只写 **2 个 .cpp**（一个相变模型 + 一个物性模型）。
-6. **可测试**：每个端口有 mock；新模型带契约测试；现有 regression 逐位/数值不变。
+1. **扩展点分类**：把“新物理”归入有限个**通用角色**（见 §2），每个角色有稳定的接口。
+2. **任意组合**：新物理可以是“场 + 耦合”“物种模型 + 闭合”“材料过程 + 物性”“约束 + 源”，也可以是它们的组合；架构不预设具体物理。
+3. **声明式接入**：插件声明自己**读/写哪些状态、需要哪些端口、以什么顺序、是否守恒**；调度器按声明组合。
+4. **成本可控**：新增一个角色通常 1–2 个文件 + 注册 + 输入 + 契约测试；不碰核心。
+5. **可测试**：每个端口有 mock；新插件带契约测试；现有 regression 逐位/数值不变。
 
 ### 1.3 非目标（建议）
 
-- 不重写 AMReX 的网格/并行/GPU 基础设施；
-- 不在第一阶段引入 DG/高阶（保留接口即可）；
-- 不追求一次到位；允许分阶段、允许旧路径暂时共存。
+- 不重写 AMReX 的网格/并行/GPU；
+- 不在第一阶段引入 DG/高阶（保留接口）；
+- 不追求一次到位；允许旧路径暂时共存。
 
 ---
 
-## 2. 现状审计（代码证据）
+## 2. 通用扩展点分类（架构的核心）
 
-### 2.1 结构
+| 扩展点 | 通用接口 | 可容纳的“各式各样”需求 | 新增文件量级 |
+|---|---|---|---|
+| **场方程** | `IFieldEquation` | 任意椭圆/抛物/双曲场：Maxwell、Poisson、输运、扩散、约束场、频域/时域、线性/非线性 | 1 |
+| **相互作用/耦合** | `IInteraction` | 任意耦合：局部/全局、成对/场介导、碰撞/摩擦、加热/电离/复合、外力 | 1 |
+| **物种模型** | `ISpeciesModel` | 粒子/流体/矩/混合；任意闭合；任意状态变量 | 1 |
+| **材料模型** | `IMaterialModel` | 物性、状态演化、相变、界面、损伤、化学反应、多相混合 | 1–2 |
+| **约束** | `IConstraint` | Gauss、divB、不可压、准中性、总能量/总动量约束 | 1 |
+| **源/汇** | `ISource` | 外源、加热、电离、复合、注入、吸收 | 1 |
+| **边界** | `IBoundary` | 新 BC、PML 变体、界面条件 | 1 |
+| **诊断** | `IDiagnostic` | 新输出、新分析、新误差估计 | 1 |
+| **时间积分/分裂** | `ITimeIntegrator` | 新 splitting、IMEX、子循环、自适应 | 1 |
+| **闭合/EOS/摩擦** | `IClosure` / `IEquationOfState` / `IFriction` | 材料/动理学闭合、状态方程、碰撞模型 | 1 |
+
+**关键**：这些是**角色**，不是具体物理。任何新需求先问“它属于哪个角色/哪几个角色的组合”，而不是“给它单独开一个分支”。
+
+---
+
+## 3. 现状审计（代码证据）
+
+### 3.1 结构
 
 ```
 Source/
@@ -67,12 +86,12 @@ Source/
 │  └─ ...
 ├─ Particles/                   # PIC
 ├─ Fluids/                      # 冷相对论流体（N, NU；无压强/摩擦）
-├─ MomentsSolver/               # 1D 5/10 矩标准测试床（Euler5、FV、耦合、单元测试）
+├─ MomentsSolver/               # 1D 5/10 矩标准测试床（equation-object、FV、耦合、单测）
 ├─ Evolve/WarpXEvolve.cpp       # 时间循环与耦合顺序
 ├─ Diagnostics/ · BoundaryConditions/ · Initialization/ · Python/ · ablastr/
 ```
 
-### 2.2 关键耦合点（读到的）
+### 3.2 关键耦合点
 
 | 位置 | 作用 | 问题 |
 |---|---|---|
@@ -81,74 +100,56 @@ Source/
 | `Evolve()` | 时间循环 + 耦合顺序 | 物理顺序写死在核心 |
 | `MacroscopicProperties` | 介质 ε/σ + 子网格 + ρ_medium | 嵌在 FDTD 目录，非独立块 |
 | `Fluids/` 与 `MomentsSolver/` | 两套流体 | 不共享 EOS/闭合/摩擦接口 |
-| `MultiFabRegister` | 场容器 | 好用，但缺少类型化语义 |
+| `MultiFabRegister` | 场容器 | 好用，但缺类型化语义 |
 
-### 2.3 可复用资产（建议保留）
+### 3.3 可复用资产（建议保留）
 
-- `ablastr::fields::MultiFabRegister`：场容器，适合做“状态注册表”的底座；
-- `FieldSolver` 的 Yee/CKC/PSATD 实现：作为场方程插件的**适配对象**；
-- `MomentsSolver/Equations/` 的 equation-object（Euler5/TenMoment/Maxwell6）：已是“物理即插件”的雏形；
-- `MomentsSolver/Coupling/` 的 Strang 状态机：可扩展为耦合层参考；
-- 现有 regression（P0/E3/S5/E6/L4/L5/L6…）：迁移的安全网。
+- `ablastr::fields::MultiFabRegister`：状态注册表的底座；
+- `FieldSolver` 的 Yee/CKC/PSATD：场方程插件的适配对象；
+- `MomentsSolver/Equations/` 的 equation-object：已是“物理即插件”的雏形；
+- `MomentsSolver/Coupling/` 的 Strang：耦合层参考；
+- 现有 regression（P0/E3/S5/E6/L4/L5/L6…）：迁移安全网。
 
 ---
 
-## 3. 文献调研（架构模式）
+## 4. 文献调研（通用模式）
 
-| 来源 | 机制 | 对本项目的启示 |
+| 来源 | 机制 | 启示 |
 |---|---|---|
-| **MOOSE** | `Kernel`、`Material`、`InterfaceKernel` 插件；输入卡写类型名；按物理模块注册（[概览](https://icmed.engin.umich.edu/wp-content/uploads/sites/176/2018/05/Summer-School-MOOSE-talk-2018-reduced.pdf)） | 场/材料/界面都是“对象 + 注册 + 输入” |
-| **Smilei** | 物种 / 场求解器 / patch 分层；模块化 PIC（[论文](https://arxiv.org/html/1702.05128v1)） | 粒子与场解耦，interaction 独立 |
-| **PIConGPU** | species 属性 + 插件式 current deposition（[仓库](https://github.com/computationalradiationphysics/picongpu)） | 沉积/收集是端口，可换 |
-| **Gkeyll** | equation-object（flux/wave speed/Riemann）+ 波传播驱动 | 模型即插件；一维测试床先行 |
-| **相变/沸腾** | 相场（Cahn–Hilliard/Allen–Cahn）、焓法、混合物介电（Maxwell–Garnett/Bruggeman）、潜热；[电场诱导相分离](https://pubs.aip.org/aip/jcp/article/161/4/044704/3304666/Electric-field-induced-phase-separation-and)、[C6F12O 沸腾](https://ouci.dntb.gov.ua/en/works/42B0kXV4/) | 介质相变 = 相变模型 + 物性模型 |
-| **自引力** | 粒子-网格（PM）Poisson：质量沉积 + 力 gather；[数值宇宙学讲义](https://indico.iap.fr/event/25/contributions/223/attachments/153/278/LesHouches_Lecture1.pdf) | 引力 = 场方程 + 相互作用 |
+| **MOOSE** | `Kernel`、`Material`、`InterfaceKernel` 插件；输入写类型名 | 通用角色 + 注册 + 输入（[概览](https://icmed.engin.umich.edu/wp-content/uploads/sites/176/2018/05/Summer-School-MOOSE-talk-2018-reduced.pdf)） |
+| **Smilei** | 物种/场求解器/patch 分层 | 粒子与场解耦，interaction 独立（[论文](https://arxiv.org/html/1702.05128v1)） |
+| **PIConGPU** | species 属性 + 插件式沉积 | 沉积/收集是端口（[仓库](https://github.com/computationalradiationphysics/picongpu)） |
+| **Gkeyll** | equation-object（flux/wave speed/Riemann） | 模型即插件 |
+| **相场/多相** | Cahn–Hilliard/Allen–Cahn、焓法、混合物介电 | 材料过程 = 状态 + 速率 + 物性（[相分离](https://pubs.aip.org/aip/jcp/article/161/4/044704/3304666/Electric-field-induced-phase-separation-and)） |
+| **PM 引力** | 质量沉积 + Poisson + 力 gather | 场+耦合的模式（[讲义](https://indico.iap.fr/event/25/contributions/223/attachments/153/278/LesHouches_Lecture1.pdf)） |
 
-**共同模式**：
-
-```
-物理 = 状态 + 模型（插件）+ 端口
-耦合 = 显式的 interaction/coupling 层
-扩展 = 实现接口 + 注册 + 输入
-```
+**共同模式**：物理 = 状态 + 模型插件 + 端口；耦合 = 显式层；扩展 = 接口 + 注册 + 输入 + 契约测试。
 
 ---
 
-## 4. 目标架构（建议）
+## 5. 目标架构（建议）
 
-### 4.1 分层图
+### 5.1 分层图
 
 ```
 ┌──────────────────────────── Core / Runtime ────────────────────────────┐
-│  typed state registry · geometry/AMR · clock/time-loop · diagnostics   │
-│  particle/fluid containers · memory/GPU · Python/inputs                │
+│  typed state registry · geometry/AMR · clock · scheduler · diagnostics │
+│  containers · memory/GPU · Python/inputs                               │
 └───────────────▲────────────────▲────────────────▲─────────────────────┘
                 │ ports          │ ports          │ ports
 ┌───────────────┴──────┐ ┌───────┴────────┐ ┌────┴──────────────────────┐
 │   Fields block       │ │  Plasma block  │ │   Medium block            │
-│  E,B / φ_g / ...     │ │ species (PIC,  │ │ phase, T, ε, σ, μ         │
-│  Maxwell, Poisson    │ │ fluid, moment) │ │ transition model          │
-│  boundary/PML        │ │ EOS, closure   │ │ property model            │
-│  source ports        │ │ interactions   │ │ interface/subpixel/charge │
+│  任意场状态/方程      │ │ 任意物种模型   │ │  任意材料状态/过程        │
+│  边界/约束/源端口     │ │ EOS/闭合/耦合  │ │  物性/界面/响应           │
 └───────────────▲──────┘ └───────▲────────┘ └────▲──────────────────────┘
                 └────────── Coupling layer ───────┘
-                interaction (EM, gravity, collisions/friction) + split
+                interactions + constraints + sources + split/IMEX
 ```
 
-### 4.2 核心接口（建议稿）
+### 5.2 通用接口（建议稿）
 
 ```cpp
-// 等离子体：粒子/流体/矩统一
-class ISpecies {
-public:
-    virtual void push(const FieldView&, Real dt) = 0;
-    virtual void deposit(FieldSource&) = 0;      // J, rho, rho_m
-    virtual void source(const FieldView&, Real dt) = 0;
-    virtual void transport(Real dt) = 0;         // 流体/矩输运
-    virtual ~ISpecies() = default;
-};
-
-// 场方程：Maxwell / Poisson / ...
+// 场：任意场方程
 class IFieldEquation {
 public:
     virtual void solve(FieldState&, const FieldSource&, Real dt) = 0;
@@ -156,7 +157,16 @@ public:
     virtual ~IFieldEquation() = default;
 };
 
-// 相互作用：电磁 / 引力 / 碰撞
+// 物种：粒子/流体/矩/混合
+class ISpeciesModel {
+public:
+    virtual void push(const FieldView&, Real dt) = 0;
+    virtual void deposit(FieldSource&) = 0;      // 任意源：J, rho, rho_m, ...
+    virtual void transport(Real dt) = 0;
+    virtual ~ISpeciesModel() = default;
+};
+
+// 耦合：任意相互作用
 class IInteraction {
 public:
     virtual void deposit(const PlasmaState&, FieldSource&) = 0;
@@ -165,160 +175,143 @@ public:
     virtual ~IInteraction() = default;
 };
 
-// EOS / 闭合 / 摩擦
-class IEquationOfState {
+// 材料：物性 / 状态过程 / 响应
+class IMaterialModel {
 public:
-    virtual Real p(Real rho, Real e) const = 0;
-    virtual Real cs2(Real rho, Real e) const = 0;
-    virtual Real T(Real rho, Real e) const = 0;
-    virtual ~IEquationOfState() = default;
-};
-class IClosure { public: virtual void apply(SpeciesState&, Real dt) = 0; };
-class IFriction { public: virtual void apply(std::span<SpeciesState>, Real dt) = 0; };
-
-// 介质：物性 / 相变 / 响应
-class IMediumProperty {
-public:
-    virtual void fill(Level&, const MediumState&) = 0;
-    virtual ~IMediumProperty() = default;
-};
-class IPhaseTransition {
-public:
-    virtual void advance(MediumState&, const FieldView&, Real dt) = 0;
-    virtual ~IPhaseTransition() = default;
-};
-class IMediumResponse {
-public:
+    virtual void properties(Level&, const MaterialState&) = 0;
+    virtual void advance(MaterialState&, const FieldView&, Real dt) = 0;
     virtual void respond(const FieldView&, FieldSource&, Real dt) = 0;
-    virtual ~IMediumResponse() = default;
+    virtual ~IMaterialModel() = default;
+};
+
+// 约束 / 源 / 边界 / 诊断 / 积分器
+class IConstraint  { public: virtual void project(State&) = 0; };
+class ISource      { public: virtual void apply(State&, Real dt) = 0; };
+class IBoundary    { public: virtual void apply(State&) = 0; };
+class IDiagnostic  { public: virtual void evaluate(const State&) = 0; };
+class ITimeIntegrator { public: virtual void step(State&, Real dt) = 0; };
+```
+
+### 5.3 插件的“声明”与调度
+
+```cpp
+struct PluginSpec {
+    std::vector<StateKey> reads;      // 读哪些状态
+    std::vector<StateKey> writes;     // 写哪些状态
+    std::vector<Port>     ports;      // 需要哪些端口
+    int                   order;      // 调度顺序
+    bool                  conservative; // 是否需守恒审计
+    std::optional<Real>   dt_scale;   // 子循环/分裂
 };
 ```
 
-### 4.3 状态注册表（建议）
+调度器按 `reads/writes/order` 组成 **DAG**，再做 operator split / IMEX；插件之间**只通过状态端口**交互，不互相依赖。
 
-- 把 `FieldType` 平铺枚举改为**分层的 typed key**：
+### 5.4 状态注册表（建议）
+
+- 把 `FieldType` 平铺枚举改为 **typed key**：
 
 ```cpp
 enum class FieldRole { State, Source, Aux, Scratch };
-template <FieldRole R, class T> struct FieldKey { ... }; // 编译期语义
+template <FieldRole R, class T> struct FieldKey { ... };
 ```
 
-- `FieldState` 提供按 key 的访问；`phi_g`、`T_medium`、`phase` 等新状态以 open slot 注册，**不改核心枚举**。
+- 新状态（任意名称/类型）以 open slot 注册，**不改核心枚举**；`FieldState` 按 key 访问。
 
-### 4.4 注册与输入（建议）
+### 5.5 注册与输入（建议）
 
 ```cpp
-register_interaction("gravity", ...);
-register_field_equation("gravity", ...);
-register_phase_transition("vaporization", ...);
-register_medium_property("dielectric_mixture", ...);
+register_field_equation("...", ...);
+register_interaction("...", ...);
+register_species_model("...", ...);
+register_material_model("...", ...);
+register_constraint("...", ...);
 ```
 
 ```
-interactions = em gravity
-gravity.poisson_solver = fft
-medium.model = dielectric_mixture
-medium.transition = vaporization
+fields.equations = maxwell ...
+interactions = em ...
+species.models = pic ...
+material.models = ...
 ```
+
+输入是**通用的**：插件自己解析自己的段；核心只负责把名字映射到工厂。
 
 ---
 
-## 5. 扩展配方（“两个 .cpp”的例子）
+## 6. 通用扩展配方（“新增一个东西”的步骤）
 
-### 5.1 例 1：粒子间引力
-
-**新增文件（建议）**
+> 以下是**角色**层面的步骤；具体物理不限。
 
 ```
-Gravity/.cpp:
-  GravityFieldEquation.cpp   // 质量密度 → Poisson 解 φ_g
-  GravityInteraction.cpp     // deposit ρ_m；gather -∇φ_g；push
+1. 判定角色：场方程 / 相互作用 / 物种模型 / 材料模型 / 约束 / 源 / 边界 / 诊断 / 积分器
+2. 实现接口（1 个 .cpp，复杂材料可拆 2 个：状态过程 + 物性）
+3. 声明 PluginSpec（reads/writes/ports/order/dt_scale/conservative）
+4. 注册到对应工厂
+5. 加输入段（插件自己的参数）
+6. 加状态 slot（若需要新状态）
+7. 契约测试（mock + 1D）+ 一个真实算例
+8. 文档
 ```
 
-**不改**：WarpX 核心、Evolve 顺序、FieldType 枚举（`phi_g` 走 open slot）、诊断（新状态自动可输出）。
+**成本量级**：单角色 1–2 个 .cpp + 注册/输入/测试；**不碰** WarpX/Evolve/FieldType 核心。
 
-**注册与输入**：见 §4.4。
-
-**验证**：均匀质量分布的解析势；双粒子自由落体；总能量（动能+引力势）守恒；与 PM 参考对比。
-
-### 5.2 例 2：介质相变（气化/沸腾）
-
-**新增文件（建议）**
+**组合示例（仅示组合能力，不是设计对象）**：
 
 ```
-Medium/PhaseTransition/:
-  VaporizationModel.cpp      // T、潜热、相分数、焓法/相场速率
-  DielectricMixture.cpp      // ε(phase,T)、σ(phase,T)、界面 subpixel
+- 一个“场方程 + 相互作用” = 新力场（任意：引力/静磁/约束场/…）
+- 一个“材料状态过程 + 物性” = 新材料过程（任意：相变/损伤/化学反应/…）
+- 一个“物种模型 + 闭合” = 新流体/矩模型
+- 一个“约束 + 源” = 新守恒/清洁方案
+- 以上可叠加：多场、多相互作用、多材料过程、链式过程
 ```
 
-**不改**：场求解器（`IMediumResponse` 把 σE/ρ_medium 喂给源端口）、时间循环。
-
-**物理选项（待定）**：
-
-- 尖锐界面：焓法 + VOF/level-set；
-- 扩散界面：Cahn–Hilliard / Allen–Cahn 相场；
-- 介电混合：Maxwell–Garnett / Bruggeman / 线性插值；
-- 潜热/能量：与流体能量方程或介质能量方程耦合。
-
-**验证**：一维 Stefan 问题；均匀场下相变前沿速度；能量守恒；与解析/文献对比。
-
-### 5.3 例 3（可选）：组分间摩擦
-
-```
-Friction/:
-  SimpleDrag.cpp      // 常数 ν，精确指数
-  Braginskii.cpp      // ν ∝ n Z² lnΛ / T^{3/2}，冻结 ν 指数/CN
-  UserDefined.cpp     // 外部回调
-```
-
-**不改**：5 矩的输运/场耦合；摩擦作为耦合层的 source。
+**关键**：这些组合由 **PluginSpec/调度器** 自动编排，而不是为每个组合写死分支。
 
 ---
 
-## 6. 实现方法（建议分阶段）
+## 7. 实现方法（建议分阶段）
 
 ### P0：接口 + mock + 适配器
 
 ```
-- 定义 §4.2 的接口；
+- 定义 §5.2 接口与 §5.3 PluginSpec；
 - 为现有 FiniteDifferenceSolver/SpectralSolver/MultiParticleContainer/WarpXFluidContainer/
   MacroscopicProperties 写适配器；
-- Evolve() 改为“适配器 + Coupling”调用；
+- Evolve() 改为“适配器 + 调度器”；
 - 验收：现有 regression 逐位/数值不变。
 ```
 
 ### P1：Plasma 块
 
 ```
-- EOS 接口 + 理想气体/等温/用户；
-- 5 矩（先在 MomentsSolver 1D 测试床）→ 适配器；
-- 摩擦三模型（简单/Braginskii/用户），指数积分；
-- 验证：Sod、声波、双组分摩擦弛豫、动量/能量守恒。
+- EOS/闭合/摩擦接口（先在 MomentsSolver 1D 测试床验证）；
+- 5 矩/10 矩/冷流体统一到 ISpeciesModel；
+- 验证：Sod、声波、双组分弛豫、守恒。
 ```
 
 ### P2：Fields 块
 
 ```
 - FieldState/FieldSource + typed registry；
-- 场方程插件（Yee/PSATD/CKC/Poisson）；
+- 场方程插件（Yee/PSATD/CKC/Poisson/…）；
 - 验收：P0/E3/S5/E6 逐位。
 ```
 
 ### P3：Medium 块
 
 ```
-- 物性/相变/响应接口；
-- ε/σ/μ 张量 + subpixel + 界面 + ρ_medium；
-- 相变示例；
-- 验收：L5/L6 + 相变解析。
+- 材料状态/过程/物性/界面/响应接口；
+- ε/σ/μ 张量 + subpixel + 面电荷；
+- 材料过程示例；
+- 验收：L5/L6 + 解析。
 ```
 
 ### P4：Coupling 层
 
 ```
-- interaction 注册与顺序；
-- Strang/IMEX；
-- 能量/电荷审计。
+- interaction/constraint/source 注册与 DAG 调度；
+- Strang/IMEX；能量/电荷/动量审计。
 ```
 
 ### P5：strangler 淘汰旧路径
@@ -333,53 +326,58 @@ Friction/:
 ```
 - 数据：SoA/AMReX；状态归 Core，块只拿 view；GPU 热路径静态多态；
 - 性能：虚函数只在每步一次；kernel 内联；避免 std::function；
-- 测试：每个端口 mock；新模型契约测试；1D 先行；2D/3D 回归；
+- 测试：每个端口 mock；新插件契约测试；1D 先行；2D/3D 回归；
 - 兼容：新老 key 双写；Python 输入逐步迁移。
 ```
 
 ---
 
-## 7. 注意事项与风险（建议逐条评估）
+## 8. 注意事项与风险（逐条评估）
 
-### 7.1 性能
+### 8.1 性能
 
-- 抽象层可能拖慢 GPU 热路径 → 建议静态多态 + 内联，虚函数只在“每步一次”的层；
-- 状态注册表的间接访问 → 建议 view/span，kernel 内只读裸指针。
+- 抽象层可能拖慢 GPU 热路径 → 静态多态 + 内联，虚函数只在“每步一次”的层；
+- 状态注册表的间接访问 → view/span，kernel 内只读裸指针。
 
-### 7.2 AMReX/GPU
+### 8.2 AMReX/GPU
 
 - MultiFab 生命周期与 view 的边界 → 状态归 Core，块只拿 view；
-- 新状态（φ_g、T、phase）的 ghost/边界/AMR 同步 → 需要统一的注册钩子。
+- 新状态的 ghost/边界/AMR 同步 → 统一注册钩子。
 
-### 7.3 迁移
+### 8.3 迁移
 
 - 现有 Evolve 顺序敏感 → 适配器阶段保留原顺序；
-- `FieldType` 平铺枚举迁移成本 → 双写 + 编译期映射；
-- 回归覆盖面 → 每个阶段都要 P0/E3/S5/E6/L4/L5/L6 逐位/数值。
+- `FieldType` 平铺枚举迁移 → 双写 + 编译期映射；
+- 回归覆盖面 → 每阶段 P0/E3/S5/E6/L4/L5/L6。
 
-### 7.4 物理正确性
+### 8.4 物理正确性
 
-- 相变的热力学闭合（潜热、焓、相场）需要专门验证；
-- 引力的 PM 自引力、边界、周期 vs 开放、软化；
-- 摩擦的刚性、动量/能量守恒、熵产；
-- 介质相变后的 ε/σ 与 EM 界面条件（子网格/面电荷）。
+- 任何新过程都要有守恒/熵/正性检查；
+- 材料过程的热力学闭合与界面条件；
+- 相互作用的自作用/边界/奇异性；
+- 约束的投影是否破坏其他守恒。
 
-### 7.5 过度设计
+### 8.5 过度设计
 
-- 只为**已知扩展点**（EM/引力/碰撞/相变/EOS）建接口；
-- 不为假想需求建抽象；每个抽象配一个真实用例。
+- 只为**已知角色**建接口；不为假想需求建抽象；
+- 每个抽象配真实用例；允许“先用适配器、后抽接口”。
 
-### 7.6 组织与流程
+### 8.6 组合爆炸
 
-- 接口变更需要评审；
+- 插件之间的顺序/耦合由 PluginSpec 决定，但要限制“任意组合”的自由度；
+- 提供**参考组合**与**守恒审计**，避免组合错误。
+
+### 8.7 组织与流程
+
+- 接口变更评审；
 - 新物理 = 接口 + 注册 + 契约测试 + 文档；
-- 迁移期间保持“旧路径可回退”。
+- 迁移期保留“旧路径可回退”。
 
 ---
 
-## 8. 参考
+## 9. 参考
 
-1. MOOSE 框架概览：<https://icmed.engin.umich.edu/wp-content/uploads/sites/176/2018/05/Summer-School-MOOSE-talk-2018-reduced.pdf>
+1. MOOSE 概览：<https://icmed.engin.umich.edu/wp-content/uploads/sites/176/2018/05/Summer-School-MOOSE-talk-2018-reduced.pdf>
 2. Smilei：<https://arxiv.org/html/1702.05128v1>
 3. PIConGPU：<https://github.com/computationalradiationphysics/picongpu>
 4. Gkeyll 两流体（5/10 矩）：<https://ar5iv.labs.arxiv.org/html/1903.09618>
@@ -390,23 +388,23 @@ Friction/:
 
 ---
 
-## 9. 建议的决策清单（留给负责人，不在本文拍板）
+## 10. 建议的决策清单（留给负责人，不在本文拍板）
 
 | # | 决策点 | 选项 | 备注 |
 |---|---|---|---|
-| 1 | 状态注册表 | 保留 `FieldType` / 改 typed registry / 双写过渡 | 影响编译期语义与迁移成本 |
-| 2 | 多态方式 | 静态多态优先 / 运行时虚函数 / 混合 | 影响性能与扩展便利 |
-| 3 | 统一等离子体块 | 粒子+流体同块 / 分块但共享接口 | 影响物种/EOS/摩擦的复用 |
-| 4 | interaction 粒度 | 场+力一体 / 场与力分离 | 引力/EM/碰撞的复用方式 |
-| 5 | 相变模型 | 尖锐（焓/VOF）/ 扩散（相场）/ 两者 | 影响界面与 EM 耦合 |
-| 6 | 引力求解器 | FFT（周期）/ MLMG（开放）/ 两者 | 影响边界与精度 |
-| 7 | 摩擦模型 | 简单 / Braginskii / 用户 | 影响刚性与守恒 |
-| 8 | 迁移范围 | 全量 / 只新物理走新接口 | 影响回归风险 |
-| 9 | 1D 测试床与 3D 的关系 | 先 1D 后 3D / 直接 3D | 影响验证速度 |
-| 10 | 旧路径淘汰时机 | 立即 / 迁移完成后 | 影响维护成本 |
+| 1 | 状态注册表 | 保留 `FieldType` / typed registry / 双写过渡 | 影响语义与迁移成本 |
+| 2 | 多态方式 | 静态多态优先 / 运行时虚函数 / 混合 | 性能 vs 扩展便利 |
+| 3 | 统一等离子体块 | 粒子+流体同块 / 分块但共享接口 | 影响物种/EOS/摩擦复用 |
+| 4 | 调度模型 | 固定顺序 / PluginSpec DAG / 手写 splitting | 组合能力 vs 可预测性 |
+| 5 | 组合自由度 | 任意组合 / 受限组合 + 参考模板 | 组合爆炸风险 |
+| 6 | 迁移范围 | 全量 / 只新物理走新接口 | 回归风险 |
+| 7 | 1D 测试床与 3D | 先 1D 后 3D / 直接 3D | 验证速度 |
+| 8 | 旧路径淘汰时机 | 立即 / 迁移完成后 | 维护成本 |
+| 9 | 性能预算 | 抽象层开销上限 / 热点白名单 | 需基准 |
+| 10 | 契约测试范围 | 每插件 / 每角色 / 抽样 | 测试成本 |
 
 ---
 
-## 10. 一句话
+## 11. 一句话
 
-**本报告建议：以“Core + Plasma（粒子/流体同块）+ Fields（场方程插件）+ Medium（物性/相变插件）+ Coupling（interaction）”为目标，用 typed 状态、工厂注册、静态多态优先与契约测试支撑扩展；引力与相变各用“场方程+相互作用”“相变模型+物性模型”两个文件即可接入；迁移用适配器 + strangler + 逐位回归；所有取舍（注册表、多态、相变模型、引力求解器、迁移范围等）列在 §9，交由负责人决定，本文不拍板。**
+**建议把“新物理”归入有限个通用角色（场方程、相互作用、物种模型、材料模型、约束、源、边界、诊断、积分器），用统一接口 + PluginSpec 声明 + 工厂注册 + typed 状态 + 契约测试来支撑任意组合；引力和相变只是“单角色 1–2 个文件”的成本示意，不是架构针对的对象；迁移用适配器 + strangler + 逐位回归；所有取舍列在 §10，交由负责人决定，本文不拍板。**
