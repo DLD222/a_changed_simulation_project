@@ -160,28 +160,38 @@ public:
 // 物种：粒子/流体/矩/混合
 class ISpeciesModel {
 public:
-    virtual void push(const FieldView&, Real dt) = 0;
+    // advance = PIC 的粒子推 / 流体的输运 / 矩的输运（同一个语义）
+    virtual void advance(const FieldView&, Real dt) = 0;
     virtual void deposit(FieldSource&) = 0;      // 任意源：J, rho, rho_m, ...
-    virtual void transport(Real dt) = 0;
     virtual ~ISpeciesModel() = default;
 };
 
 // 耦合：任意相互作用
 class IInteraction {
 public:
+    // 相互作用只负责“源/力”两侧；场方程由它持有/引用的 IFieldEquation 完成
     virtual void deposit(const PlasmaState&, FieldSource&) = 0;
-    virtual void solve(FieldState&, const FieldSource&, Real dt) = 0;
     virtual void gather(PlasmaState&, const FieldState&, Real dt) = 0;
+    // 可选：声明它使用哪个场方程/状态端口
+    virtual FieldEquationId field_equation() const = 0;
     virtual ~IInteraction() = default;
 };
 
-// 材料：物性 / 状态过程 / 响应
-class IMaterialModel {
+// 材料：物性 / 状态过程 / 响应（三者消费者不同，建议分开）
+class IMaterialProperty {   // 场求解器要的 ε/σ/μ（可缓存）
 public:
-    virtual void properties(Level&, const MaterialState&) = 0;
+    virtual void fill(Level&, const MaterialState&) = 0;
+    virtual ~IMaterialProperty() = default;
+};
+class IMaterialProcess {    // 相变/反应/损伤等状态演化
+public:
     virtual void advance(MaterialState&, const FieldView&, Real dt) = 0;
+    virtual ~IMaterialProcess() = default;
+};
+class IMaterialResponse {   // 源：σE、ρ_medium、表面电荷
+public:
     virtual void respond(const FieldView&, FieldSource&, Real dt) = 0;
-    virtual ~IMaterialModel() = default;
+    virtual ~IMaterialResponse() = default;
 };
 
 // 约束 / 源 / 边界 / 诊断 / 积分器
@@ -205,7 +215,9 @@ struct PluginSpec {
 };
 ```
 
-调度器按 `reads/writes/order` 组成 **DAG**，再做 operator split / IMEX；插件之间**只通过状态端口**交互，不互相依赖。
+调度器按 `reads/writes/order` 组成**同一 split 阶段内的偏序**；**场与源本质上是循环依赖**（场依赖源、源依赖场），
+不能靠 reads/writes 的 DAG 排序，必须由 operator split（Strang）、IMEX 或定点迭代显式处理循环。
+插件之间**只通过状态端口**交互，不互相依赖。
 
 ### 5.4 状态注册表（建议）
 
@@ -217,6 +229,8 @@ template <FieldRole R, class T> struct FieldKey { ... };
 ```
 
 - 新状态（任意名称/类型）以 open slot 注册，**不改核心枚举**；`FieldState` 按 key 访问。
+- 注意：编译期 `FieldKey<R,T>` 只能覆盖**已知**状态；插件自定义的**运行时命名 slot**
+  （string/id + 布局）需要类型擦除的 registry，二者要分清。
 
 ### 5.5 注册与输入（建议）
 
@@ -254,7 +268,8 @@ material.models = ...
 8. 文档
 ```
 
-**成本量级**：单角色 1–2 个 .cpp + 注册/输入/测试；**不碰** WarpX/Evolve/FieldType 核心。
+**成本量级**：单角色 **1–2 个核心 .cpp** + 状态 slot/边界/输入/诊断/契约测试等“胶水”；
+“不碰核心”指不碰 WarpX/Evolve/FieldType 的分支逻辑，但**胶水不可省**。
 
 **组合示例（仅示组合能力，不是设计对象）**：
 
@@ -408,3 +423,76 @@ material.models = ...
 ## 11. 一句话
 
 **建议把“新物理”归入有限个通用角色（场方程、相互作用、物种模型、材料模型、约束、源、边界、诊断、积分器），用统一接口 + PluginSpec 声明 + 工厂注册 + typed 状态 + 契约测试来支撑任意组合；引力和相变只是“单角色 1–2 个文件”的成本示意，不是架构针对的对象；迁移用适配器 + strangler + 逐位回归；所有取舍列在 §10，交由负责人决定，本文不拍板。**
+
+
+---
+
+## 12. 自检与修正（对本文建议的审查）
+
+> 以下是自查发现的问题与修正；前文相关段落若与本節冲突，以本節为准。
+
+### 12.1 已修正的结构性错误
+
+1. **“DAG 调度”不成立（最严重）**
+   - 场与源是**循环依赖**（场依赖源、源依赖场）；reads/writes 的 DAG 无法给循环排序。
+   - 修正：DAG 只用于**同一 split 阶段内的偏序**；循环由 operator split / IMEX / 定点迭代显式处理（§5.3 已改）。
+
+2. **`IInteraction::solve` 与 `IFieldEquation` 重复**
+   - 相互作用不应自己解场；它只负责 deposit/gather，并声明使用哪个场方程。
+   - 修正：`IInteraction` 去掉 `solve`，加 `field_equation()`（§5.2 已改）。
+
+3. **`IMaterialModel` 三合一破坏模块性**
+   - 物性（ε/σ，场求解器要）、状态过程（相变/反应）、响应（σE/ρ_medium，源要）的消费者不同；
+     合并会强迫材料模型实现全部方法。
+   - 修正：拆回 `IMaterialProperty` / `IMaterialProcess` / `IMaterialResponse`（§5.2 已改）。
+
+4. **`ISpeciesModel` 的 `push`/`transport` 语义重叠**
+   - PIC 的粒子推与流体的输运是同一语义；`push` 与 `transport` 并存会让人误解。
+   - 修正：统一为 `advance`（§5.2 已改）。
+
+5. **“open slot”说法过强**
+   - 编译期 `FieldKey<R,T>` 只能覆盖已知状态；插件自定义的**运行时命名 slot** 需要类型擦除，
+     二者要分清（§5.4 已注）。
+
+6. **“1–2 个 .cpp”低估**
+   - 除核心实现外，还有状态 slot、边界、输入、诊断、契约测试等胶水；
+   - 真实成本应表述为“**1–2 个核心文件 + 胶水**”（§6 已改）。
+
+7. **“任意组合”不能靠声明保证守恒/一致**
+   - `conservative` 标志只是声明，不是证明；组合可能重复计数或破坏守恒；
+   - 修正：必须配守恒审计、参考组合、契约测试；不承诺“自动正确”（§8.6 已提，此处强调）。
+
+8. **性能结论偏乐观**
+   - “静态多态 + 虚函数每步一次”只解决**每步**的分派；每个 cell 的插件代码仍需
+     **templated kernel + 类型擦除的 kernel launcher**，并考虑 kernel launch/融合/内存布局；
+     需要基准，不能只靠声明。
+
+9. **“P0 逐位不变”是目标而非保证**
+   - 适配器保持调用顺序通常逐位；但新接口的浮点顺序可能变化；
+   - 修正：以“逐位优先、数值回归为兜底”，并记录偏差。
+
+10. **文献引用**
+    - MOOSE/Smilei/PIConGPU/Gkeyll 的“模式”描述是概括，不是逐条原文；
+    - 相变/PM 引力的具体公式与假设需按原文核对后再用于实现。
+
+### 12.2 仍然成立的部分
+
+- 现状审计（上帝类、平铺 FieldType、介质嵌在 FDTD、两套流体、Evolve 写死顺序）；
+- 通用角色分类（场/耦合/物种/材料/约束/源/边界/诊断/积分器）；
+- 插件 + 注册 + 输入 + 契约测试的总体方向；
+- 适配器 + strangler + 分阶段迁移；
+- 风险清单（性能、AMReX、迁移、物理正确性、过度设计、组合爆炸）。
+
+### 12.3 需要补充的决策
+
+- 循环耦合的**具体 splitting/IMEX 方案**（Strang 顺序、场源冻结、迭代次数、收敛判据）；
+- **守恒审计**的机制（能量/动量/电荷/熵）与容差；
+- 运行时命名 slot 的**类型擦除**实现（string/id → 布局/访问器）；
+- **kernel launcher** 的设计（templated kernel + 函数指针/变体）；
+- 组合的**受限集合**与参考模板（避免任意组合的不可控）。
+
+---
+
+## 13. 一句话（修正版）
+
+**通用角色 + 插件注册 + typed/命名状态 + 契约测试的方向成立；但“DAG 调度”“interaction 自带 solve”“材料三合一”“1–2 个 .cpp 且不碰核心”“任意组合自动正确”这几条需要修正为：循环依赖用 split/IMEX 显式处理、interaction 只做源/力并引用场方程、材料拆成物性/过程/响应、核心文件之外有胶水、组合必须配守恒审计与受限模板。**
