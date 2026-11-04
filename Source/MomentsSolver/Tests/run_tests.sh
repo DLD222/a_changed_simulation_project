@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../../.."   # -> ~/WarpX_fluid
 INC="-ISource -ISource/MomentsSolver"
 CXX="g++ -std=c++17 -O2"
 
-for t in euler_sod ten_moment maxwell langmuir em_dispersion ten_moment_k0 ten_moment_wave friction eos fv_nd coupling_nd; do
+for t in euler_sod ten_moment maxwell langmuir em_dispersion ten_moment_k0 ten_moment_wave friction eos fv_nd coupling_nd yee_deposition; do
   echo "=== $t ==="
   $CXX $INC "Source/MomentsSolver/Tests/test_${t}.cpp" -o "/tmp/test_${t}"
   "/tmp/test_${t}"

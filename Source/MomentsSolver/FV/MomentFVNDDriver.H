@@ -116,7 +116,16 @@ struct FVND
     }
 
     /** RHS = -div F over all active axes. */
-    void rhs (const Real* U, const Ctx& ctx, const BC bc[3], Real* out) const
+    /**
+     * \brief RHS = -div F.  Optionally records the mass flux (component 0) on
+     *        the lower/upper face of every cell, per axis, for charge deposition.
+     *
+     * `Flo[d][c]` / `Fhi[d][c]` are the fluxes at face (i-1/2) and (i+1/2) of the
+     * cell in axis d.  They are exact copies of the interface fluxes used to build
+     * the divergence, so (Fhi - Flo)/h reproduces `out` for component 0 exactly.
+     */
+    void rhs (const Real* U, const Ctx& ctx, const BC bc[3], Real* out,
+              Real* Flo[3] = nullptr, Real* Fhi[3] = nullptr) const
     {
         const std::size_t nc = ncell_total();
         std::fill(out, out + nc * N, Real(0));
@@ -186,7 +195,7 @@ struct FVND
                         Eq::numerical_flux(UL, UR, d, F.data() + q * N, ctx);
                     }
 
-                    // divergence along this line
+                    // divergence along this line (+ optional face-flux record)
                     for (int i = 0; i < n; ++i) {
                         int cc[3] = {0, 0, 0};
                         cc[d] = i;
@@ -195,6 +204,8 @@ struct FVND
                         for (int v = 0; v < N; ++v) {
                             out[c * N + v] -= (F[(i + 1) * N + v] - F[i * N + v]) / h;
                         }
+                        if (Flo != nullptr && Flo[d] != nullptr) { Flo[d][c] = F[i * N + 0]; }
+                        if (Fhi != nullptr && Fhi[d] != nullptr) { Fhi[d][c] = F[(i + 1) * N + 0]; }
                     }
                 }
             }
@@ -216,6 +227,81 @@ struct FVND
         }
 
         rhs(U2.data(), ctx, bc, K.data());
+        for (std::size_t c = 0; c < sz; ++c) {
+            U[c] = (Real(1) / Real(3)) * Un[c] + (Real(2) / Real(3)) * (U2[c] + dt * K[c]);
+        }
+    }
+    /**
+     * \brief SSP-RK3 advance that also returns the RK-weighted mass flux on every
+     *        face, `F=1/6 F1 + 1/6 F2 + 2/3 F3`.
+     *
+     * Because the RK3 update is U^{n+1} = U^n + dt (1/6 K1 + 1/6 K2 + 2/3 K3) and
+     * K = -div F, the returned flux satisfies the discrete continuity identity
+     *      (rho^{n+1} - rho^n)/dt + div F = 0
+     * to machine precision.  That is what makes charge-conserving deposition
+     * possible: build J from this flux instead of from rho*u.
+     */
+    void advance_with_mass_flux (Real* U, Real dt, const Ctx& ctx, const BC bc[3],
+                                 std::vector<Real> Flo_out[3],
+                                 std::vector<Real> Fhi_out[3]) const
+    {
+        const std::size_t sz = size();
+        const std::size_t nc = ncell_total();
+        for (int d = 0; d < 3; ++d) {
+            Flo_out[d].assign(nc, Real(0));
+            Fhi_out[d].assign(nc, Real(0));
+        }
+
+        std::vector<Real> U1(sz), U2(sz), K(sz), Un(U, U + sz);
+
+        // stage scratch: `rhs` writes the recorded fluxes, so it must NOT alias
+        // the accumulators below (otherwise stage 2 overwrites stage 1).
+        std::vector<Real> flo_buf[3], fhi_buf[3];
+        Real* flo[3]; Real* fhi[3];
+        for (int d = 0; d < 3; ++d) {
+            if (d < DIM) {
+                flo_buf[d].assign(nc, Real(0));
+                fhi_buf[d].assign(nc, Real(0));
+                flo[d] = flo_buf[d].data();
+                fhi[d] = fhi_buf[d].data();
+            } else {
+                flo[d] = nullptr;
+                fhi[d] = nullptr;
+            }
+        }
+
+        const Real w1 = Real(1) / Real(6), w2 = Real(1) / Real(6), w3 = Real(2) / Real(3);
+
+        // stage 1
+        rhs(Un.data(), ctx, bc, K.data(), flo, fhi);
+        for (int d = 0; d < DIM; ++d) {
+            for (std::size_t c = 0; c < nc; ++c) {
+                Flo_out[d][c] = w1 * flo[d][c];
+                Fhi_out[d][c] = w1 * fhi[d][c];
+            }
+        }
+        for (std::size_t c = 0; c < sz; ++c) { U1[c] = Un[c] + dt * K[c]; }
+
+        // stage 2
+        rhs(U1.data(), ctx, bc, K.data(), flo, fhi);
+        for (int d = 0; d < DIM; ++d) {
+            for (std::size_t c = 0; c < nc; ++c) {
+                Flo_out[d][c] += w2 * flo[d][c];
+                Fhi_out[d][c] += w2 * fhi[d][c];
+            }
+        }
+        for (std::size_t c = 0; c < sz; ++c) {
+            U2[c] = Real(0.75) * Un[c] + Real(0.25) * (U1[c] + dt * K[c]);
+        }
+
+        // stage 3
+        rhs(U2.data(), ctx, bc, K.data(), flo, fhi);
+        for (int d = 0; d < DIM; ++d) {
+            for (std::size_t c = 0; c < nc; ++c) {
+                Flo_out[d][c] += w3 * flo[d][c];
+                Fhi_out[d][c] += w3 * fhi[d][c];
+            }
+        }
         for (std::size_t c = 0; c < sz; ++c) {
             U[c] = (Real(1) / Real(3)) * Un[c] + (Real(2) / Real(3)) * (U2[c] + dt * K[c]);
         }
