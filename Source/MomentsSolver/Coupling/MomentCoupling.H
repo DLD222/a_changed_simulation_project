@@ -19,6 +19,7 @@
 #include "Equations/Euler5Eqn.H"
 #include "Equations/MaxwellEqn.H"
 #include "FV/MomentFVDriver.H"
+#include "FV/MomentFVNDDriver.H"
 #include "Coupling/FluidFriction.H"
 
 #include <vector>
@@ -49,10 +50,10 @@ struct Species5
  */
 inline void apply_coupling_source (Real* field, std::vector<Real*>& U,
                                    const std::vector<Species5>& sp,
-                                   int nx, Real dt, Real eps0)
+                                   int nc, Real dt, Real eps0)
 {
     const int ns = static_cast<int>(sp.size());
-    for (int i = 0; i < nx; ++i) {
+    for (int i = 0; i < nc; ++i) {
         Real* f = field + 6 * i;
         const Real Bx = f[3], By = f[4], Bz = f[5];
 
@@ -129,6 +130,56 @@ inline void strang_step (Real* field, std::vector<Real*>& U,
     apply_coupling_source(field, U, sp, nx, 0.5 * dt, eps0);
     apply_friction(U.data(), static_cast<int>(sp.size()), nx, 0.5 * dt,
                    friction, q.data(), m.data(), eos.data());
+}
+
+/**
+ * \brief One Strang step on a 2D/3D grid (same physics as strang_step).
+ *
+ * `apply_coupling_source` and `apply_friction` are pointwise, so they only need
+ * the total cell count; only the hyperbolic transport is dimension dependent,
+ * and that is handled by FVND. For DIM == 2 pass nz = 1.
+ *
+ * Storage: field[6*nc], U[s][5*nc] with the FVND layout ((i*ny + j)*nz + k).
+ */
+template <int DIM>
+inline void strang_step_nd (Real* field, std::vector<Real*>& U,
+                            const std::vector<Species5>& sp,
+                            int nx, int ny, int nz,
+                            Real dx, Real dy, Real dz,
+                            Real dt, Real eps0, Real c, const BC bc[3],
+                            const FrictionParams& friction = FrictionParams{})
+{
+    static_assert(DIM == 2 || DIM == 3, "strang_step_nd supports DIM = 2 or 3");
+    const int nc = nx * ny * ((DIM == 2) ? 1 : nz);
+    const int ns = static_cast<int>(sp.size());
+
+    // per-species friction data (q, m, ideal-gas EOS for T in Braginskii)
+    std::vector<Real> q(sp.size()), m(sp.size());
+    std::vector<IdealGasEos> ig(sp.size());
+    std::vector<Eos> eos(sp.size());
+    for (std::size_t s = 0; s < sp.size(); ++s) {
+        q[s] = sp[s].q; m[s] = sp[s].m;
+        ig[s].gamma = sp[s].gamma;
+        eos[s] = make_ideal_gas(&ig[s]);
+    }
+
+    apply_coupling_source(field, U, sp, nc, Real(0.5) * dt, eps0);
+    apply_friction(U.data(), ns, nc, Real(0.5) * dt, friction, q.data(), m.data(), eos.data());
+
+    for (std::size_t s = 0; s < sp.size(); ++s) {
+        Euler5::Context ectx;
+        ectx.gamma = sp[s].gamma;
+        FVND<Euler5, DIM> fv(nx, ny, nz, dx, dy, dz);
+        fv.advance(U[s], dt, ectx, bc);
+    }
+
+    Maxwell6::Context mctx;
+    mctx.c = c;
+    FVND<Maxwell6, DIM> fm(nx, ny, nz, dx, dy, dz);
+    fm.advance(field, dt, mctx, bc);
+
+    apply_coupling_source(field, U, sp, nc, Real(0.5) * dt, eps0);
+    apply_friction(U.data(), ns, nc, Real(0.5) * dt, friction, q.data(), m.data(), eos.data());
 }
 
 } // namespace moments
