@@ -571,3 +571,97 @@ public:
 ### 14.4 一句话（采纳审阅后）
 
 **方向成立，但全量 P0–P5 不划算；采纳审阅：保留字符串注册表、P0 用数值门而非逐位、接口补 `TimeLayer` + `FieldView` 形状；先做 medium 单块 MVP（`IMediumProperty` + `IMediumSource`，2–3 周，L0–L6 回归），不动核心，等第二个真实需求再推广。**
+
+---
+
+## 15. 极致可扩展 + 最小旧码改动：**插件层 + 少量钩子**
+
+> 用户优先级：**极致的可扩展性与模块化，尽量少改旧源码**。
+> 全量 P0–P5（改写 WarpX/Evolve/FieldType）与本优先级冲突，不采纳。
+> 本节给出替代路线：**旧码当宿主，新物理全部以插件加入；旧码只加钩子与构建，不改核心逻辑。**
+
+### 15.1 总原则
+
+```
+旧码：不动 FieldType、不动场求解器、不动 MacroscopicProperties、不改 Evolve 的物理顺序
+新码：Source/Multiphysics/（接口 + 注册 + 调度 + 状态视图 + kernel launcher）
+      + 插件（interaction / field equation / species model / material）
+钩子：Evolve 里一次调用 + 初始化注册 + 构建；默认关闭 → 旧路径逐位/数值不变
+```
+
+### 15.2 旧码需要改的**全部**位置（预算）
+
+| 文件 | 改动 | 量级 |
+|---|---|---|
+| `Source/Evolve/WarpXEvolve.cpp` | 在现有步骤之间插入一次 `Multiphysics::step()`（默认 `Off`，`On` 时接管新物理）；旧分支保留 | ~10–20 行 |
+| `Source/WarpX.cpp` / `Initialization/` | 注册插件、读输入、分配新状态的字符串 slot（复用 `MultiFabRegister`） | ~20–40 行 |
+| `Source/CMakeLists.txt` / `Make.package` | 加入新目录 | 几行 |
+| `Source/Fields.H` | **不改**（新状态用字符串注册） | 0 |
+| `Source/FieldSolver/**` | **不改**（适配器在新层） | 0 |
+| `Source/Particles/`、`Source/Fluids/` | **不改**（适配器在新层） | 0 |
+| `MacroscopicProperties` | **不改**（适配器在新层） | 0 |
+
+**核心逻辑零改动；旧路径默认行为不变。**
+
+### 15.3 新层（`Source/Multiphysics/`）
+
+```
+Multiphysics/
+├─ Core/        IPlugin, PluginSpec, Registry, Scheduler, StateView, Launcher
+├─ Ports/       FieldView, FieldSource, TimeLayer, PlasmaState, MaterialState
+├─ Builtins/    EM interaction（适配现有场求解器）、Medium 适配器、PIC/Fluid 适配器
+└─ Plugins/     用户/新物理插件（EOS、摩擦、引力、相变、…）
+```
+
+关键形状（采纳审阅 §2.3）：
+
+```cpp
+struct FieldView { amrex::Array4<amrex::Real> a; amrex::Box bx; int ncomp; };
+enum class TimeLayer { Full, FirstHalf, SecondHalf };
+
+class IFieldEquation {
+public:
+    virtual void advance(FieldState&, const FieldSource&, Real dt, TimeLayer) = 0;
+    virtual void boundary(FieldState&) = 0;
+};
+
+// 插件实现是模板/静态多态；注册时绑定到 kernel launcher；
+// 虚函数只出现在“选择 launcher”这一层（每步一次）。
+```
+
+### 15.4 插件如何“零旧码”接入
+
+```
+1. 新状态：register("phi_g", layout) → MultiFabRegister（字符串键，已有）
+2. 新场方程：实现 IFieldEquation + launch<Impl>；注册到 Registry
+3. 新相互作用：实现 IInteraction（deposit/gather + field_equation()）；注册
+4. 新物种模型：实现 ISpeciesModel（advance/deposit）；注册
+5. 新材料：实现 IMaterialProperty / IMaterialProcess / IMaterialResponse；注册
+6. 输入：插件自己的段；核心只做名字→工厂映射
+7. 测试：mock + 1D 契约测试 + 现有 L0–L6 数值门
+```
+
+### 15.5 分阶段（与 medium MVP 融合）
+
+```
+S0（2–3 周）：新层骨架 + medium 插件（IMediumProperty/IMediumSource 适配 MacroscopicProperties）
+              + Evolve 钩子（默认 Off）+ L0–L6 数值门（≤1e-12）
+S1：EOS/摩擦插件（MomentsSolver 1D 验证后接 3D 适配器）
+S2：第一个“新物理”插件（任意 interaction/field）——验证“零旧码”扩展
+S3：第二个新物理插件——验证可组合性
+S4：若旧 Evolve 成为瓶颈，再评估是否把调度器前移（届时才动核心）
+```
+
+### 15.6 风险与边界
+
+```
+- 钩子位置：必须在现有半格/时间层语义正确的点；默认 Off 保旧路径
+- 新调度器与旧 Evolve 的顺序：On 时由新调度器接管，旧步骤不再重复执行
+- 旧特性（AMR/EB/PML/Python）：通过适配器复用，不在新层重写
+- 性能：新层虚函数只在每步一次；kernel 用 FieldView + launcher
+- 测试：旧路径逐位/数值不变；新插件契约测试；组合的守恒审计
+```
+
+### 15.7 一句话
+
+**不改旧码的物理逻辑：旧码当宿主，新层 `Source/Multiphysics` + 插件 + 三个钩子（Evolve 一次调用、初始化注册、构建）；新物理（任意 interaction/field/species/material）以插件加入，零旧码改动；先做 medium 插件 + 钩子骨架（2–3 周），再用第二个新物理验证“零旧码”扩展。**
