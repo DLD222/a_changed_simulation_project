@@ -245,6 +245,45 @@ MacroscopicProperties::ReadParameters ()
             utils::parser::makeParser(m_str_mu_function,{"x","y","z"}));
     }
 
+    // ---- user-facing input checks -------------------------------------------
+    // Reject keys that users commonly try but that this build does not implement,
+    // instead of silently ignoring them.
+    {
+        char const* const unsupported[][2] = {
+            {"mu_tensor_xx", "anisotropic mu"}, {"mu_tensor_yy", "anisotropic mu"},
+            {"mu_tensor_zz", "anisotropic mu"}, {"mu_tensor_xy", "anisotropic mu"},
+            {"mu_tensor_xz", "anisotropic mu"}, {"mu_tensor_yz", "anisotropic mu"},
+            {"sigma2", "a second conductivity"},
+            {"sigma_function2", "a second conductivity"}
+        };
+        for (auto const& u : unsupported) {
+            WARPX_ALWAYS_ASSERT_WITH_MESSAGE(!pp_macroscopic.contains(u[0]),
+                std::string("macroscopic: `") + u[0] + "` is set but this build does not"
+                " implement " + u[1] + ". Remove the key: the value would be ignored.");
+        }
+    }
+
+    // One consolidated summary so the effective model can be checked at a glance.
+    amrex::Print() << "[MACRO] ---- effective configuration ----" << "\n";
+    amrex::Print() << "[MACRO]  eps  : "
+                   << (m_has_eps_tensor ? "3x3 tensor (material 1)"
+                                        : (m_epsilon_s == "parse_epsilon_function"
+                                           ? "parser (spatially varying)" : "scalar"))
+                   << "\n";
+    amrex::Print() << "[MACRO]  eps2 : "
+                   << (m_has_eps2_tensor ? "3x3 tensor (material 2)"
+                                         : (m_has_interface ? "scalar (material 2)" : "n/a"))
+                   << "\n";
+    amrex::Print() << "[MACRO]  sigma: "
+                   << (m_has_sig_tensor ? "3x3 tensor"
+                                        : (m_sigma_s == "parse_sigma_function" ? "parser" : "scalar"))
+                   << "\n";
+    amrex::Print() << "[MACRO]  mu   : isotropic only (tensor mu not implemented)" << "\n";
+    amrex::Print() << "[MACRO]  interface: "
+                   << (m_has_interface ? m_str_interface_function : std::string("<none>"))
+                   << "\n";
+    amrex::Print() << "[MACRO]  conduction: matrix exponential M1/M2 (tensor capable)" << "\n";
+
 }
 
 void
