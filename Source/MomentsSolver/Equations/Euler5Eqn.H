@@ -10,6 +10,7 @@
 #define MOMENTSOLVER_EQUATIONS_EULER5_H_
 
 #include "Equations/MomentEquation.H"
+#include "Equations/EquationOfState.H"
 
 #include <cmath>
 #include <algorithm>
@@ -29,14 +30,28 @@ struct Euler5
 
     struct Context
     {
-        Real gamma = 5.0 / 3.0; //!< ratio of specific heats
+        Real gamma = 5.0 / 3.0; //!< ideal-gas ratio of specific heats (fallback)
+        Eos  eos;               //!< pluggable EOS (used when use_eos == true)
+        bool use_eos = false;   //!< if true, use `eos` instead of the gamma law
     };
 
-    /** Thermal pressure from conserved state. */
+    /** Specific internal energy from the conserved state. */
+    MOMENTS_GPU_HOST_DEVICE
+    static Real internal_energy (const Real* U) noexcept
+    {
+        const Real rho = U[0];
+        const Real u2  = (U[1]*U[1] + U[2]*U[2] + U[3]*U[3]) / (rho*rho);
+        return U[4] / rho - 0.5 * u2;
+    }
+
+    /** Thermal pressure from the conserved state (ideal gas or pluggable EOS). */
     MOMENTS_GPU_HOST_DEVICE
     static Real pressure (const Real* U, const Context& ctx) noexcept
     {
         const Real rho = U[0];
+        if (ctx.use_eos && ctx.eos.valid()) {
+            return ctx.eos.p(rho, internal_energy(U));
+        }
         const Real u2  = (U[1]*U[1] + U[2]*U[2] + U[3]*U[3]) / (rho*rho);
         return (ctx.gamma - 1.0) * (U[4] - 0.5 * rho * u2);
     }
@@ -47,6 +62,10 @@ struct Euler5
     {
         const Real rho = U[0];
         const Real u   = U[1 + dir] / rho;
+        if (ctx.use_eos && ctx.eos.valid()) {
+            const Real cs2 = ctx.eos.cs2(rho, internal_energy(U));
+            return std::abs(u) + std::sqrt(std::max(cs2, Real(0)));
+        }
         const Real p   = pressure(U, ctx);
         return std::abs(u) + std::sqrt(ctx.gamma * p / rho);
     }

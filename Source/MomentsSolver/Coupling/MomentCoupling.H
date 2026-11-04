@@ -19,6 +19,7 @@
 #include "Equations/Euler5Eqn.H"
 #include "Equations/MaxwellEqn.H"
 #include "FV/MomentFVDriver.H"
+#include "Coupling/FluidFriction.H"
 
 #include <vector>
 #include <cmath>
@@ -98,9 +99,22 @@ inline void apply_coupling_source (Real* field, std::vector<Real*>& U,
  */
 inline void strang_step (Real* field, std::vector<Real*>& U,
                          const std::vector<Species5>& sp,
-                         int nx, Real dx, Real dt, Real eps0, Real c, BC bc)
+                         int nx, Real dx, Real dt, Real eps0, Real c, BC bc,
+                         const FrictionParams& friction = FrictionParams{})
 {
+    // per-species friction data (q, m, EOS for T in the Braginskii model)
+    std::vector<Real> q(sp.size()), m(sp.size());
+    std::vector<IdealGasEos> ig(sp.size());
+    std::vector<Eos> eos(sp.size());
+    for (std::size_t s = 0; s < sp.size(); ++s) {
+        q[s] = sp[s].q; m[s] = sp[s].m;
+        ig[s].gamma = sp[s].gamma;
+        eos[s] = make_ideal_gas(&ig[s]);
+    }
+
     apply_coupling_source(field, U, sp, nx, 0.5 * dt, eps0);
+    apply_friction(U.data(), static_cast<int>(sp.size()), nx, 0.5 * dt,
+                   friction, q.data(), m.data(), eos.data());
 
     for (std::size_t s = 0; s < sp.size(); ++s) {
         Euler5::Context ectx;
@@ -113,6 +127,8 @@ inline void strang_step (Real* field, std::vector<Real*>& U,
     FV1D<Maxwell6>::advance(field, nx, dx, dt, mctx, bc);
 
     apply_coupling_source(field, U, sp, nx, 0.5 * dt, eps0);
+    apply_friction(U.data(), static_cast<int>(sp.size()), nx, 0.5 * dt,
+                   friction, q.data(), m.data(), eos.data());
 }
 
 } // namespace moments
