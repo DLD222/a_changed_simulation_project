@@ -1384,6 +1384,10 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                 auto const& Ey2 = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{1}, lev);
                 auto const& Ez2 = m_fields.get(FieldType::Efield_fp, ablastr::fields::Direction{2}, lev);
                 auto& eps2 = m_macroscopic_properties->getepsilon_mf();
+            // Total free charge is rho_particle + rho_medium. rho_fp is overwritten by
+            // particle deposition every step, so it is the current particle charge.
+            auto* rho_p = m_fields.has(FieldType::rho_fp, lev)
+                        ? m_fields.get(FieldType::rho_fp, lev) : nullptr;
                 amrex::Real const dx = Geom(lev).CellSize(0);
                 amrex::Real const dz = Geom(lev).CellSize(AMREX_SPACEDIM-1);
                 amrex::IntVect bnd_shrink = amrex::IntVect::TheZeroVector();
@@ -1408,6 +1412,8 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                     // same effective eps as the E update (node-centred) -- see 5.0ad
                     auto const& en0 = m_macroscopic_properties->get_eps_node_mf(0).const_array(mfi);
                     auto const& en2 = m_macroscopic_properties->get_eps_node_mf(2).const_array(mfi);
+                    auto const& rp_arr = (rho_p != nullptr)
+                        ? rho_p->const_array(mfi) : amrex::Array4<amrex::Real const>{};
                     amrex::ParallelFor(bx, [=] AMREX_GPU_DEVICE (int i, int j, int k) {
                         auto Dx = [&](int ii, int jj) {
                             return en0(ii,jj,k,0)*ex(ii,jj,k)
@@ -1421,16 +1427,18 @@ WarpX::MacroscopicEvolveE (int lev, PatchType patch_type, amrex::Real a_dt, amre
                         };
                         amrex::Real const divD = (Dx(i,j) - Dx(i-1,j)) / dx
                                                + (Dz(i,j) - Dz(i,j-1)) / dz;
-                        amrex::Gpu::Atomic::Max(pmax, std::abs(divD - rh(i,j,k)));
+                        amrex::Real const rp = (rho_p != nullptr) ? rp_arr(i,j,k) : amrex::Real(0.0);
+                        amrex::Gpu::Atomic::Max(pmax, std::abs(divD - rh(i,j,k) - rp));
                         amrex::Gpu::Atomic::Max(pdiv, std::abs(divD));
                         amrex::Gpu::Atomic::Max(prho, std::abs(rh(i,j,k)));
                     });
                 }
                 amrex::Real const resid = dmax.dataValue();
                 amrex::Print() << "[GAUSS] step " << m_macroscopic_properties->gauss_check_step()
-                               << "  max|div D - rho_medium| = " << resid
+                               << "  max|divD - (rho_p + rho_m)| = " << resid
                                << "  max|divD| = " << ddiv.dataValue()
-                               << "  max|rho| = " << drho.dataValue() << "\n";
+                               << "  max|rho_m| = " << drho.dataValue()
+                               << "  (rho_p = particle charge, rho_m = conduction charge)\n";
             }
         }
     }
