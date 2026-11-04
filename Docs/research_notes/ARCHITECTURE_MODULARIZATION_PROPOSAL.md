@@ -665,3 +665,149 @@ S4：若旧 Evolve 成为瓶颈，再评估是否把调度器前移（届时才�
 ### 15.7 一句话
 
 **不改旧码的物理逻辑：旧码当宿主，新层 `Source/Multiphysics` + 插件 + 三个钩子（Evolve 一次调用、初始化注册、构建）；新物理（任意 interaction/field/species/material）以插件加入，零旧码改动；先做 medium 插件 + 钩子骨架（2–3 周），再用第二个新物理验证“零旧码”扩展。**
+
+---
+
+## 16. 插件化架构（Plugin Architecture）：稳定内核 + 标准插头 + 外挂模块
+
+> 目的（用户确认）：主框架是**稳定内核**，原有源码尽量不动；定义一套**固定标准接口（插头）**；
+> 用户只实现接口、写成**独立模块**；框架在**编译期或运行期加载/注册**，与内核联动；
+> 新能力、新边界、新源项、新材料模型全部在外挂模块里写。
+
+### 16.1 三层结构
+
+```
+┌──────────────────────── 稳定内核（Kernel）────────────────────────┐
+│ 现有 WarpX：场/粒子/流体/介质/时间循环/诊断/AMR/EB                 │
+│ + 唯一的新增内核侧代码：PluginHost（加载、注册、分发）              │
+│ + 极少的“调用点”：init / step / boundary / material / source        │
+└───────────────▲───────────────────────────────────────────────────┘
+                │ 标准插头（固定接口 + 元数据）
+┌───────────────┴───────────────────────────────────────────────────┐
+│ 外挂模块（Module）：用户只写这里                                     │
+│  new capability(IFieldEquation/IInteraction) · new boundary(IBoundary)│
+│  new source(ISource) · new material(IMaterialModel) · new species     │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+### 16.2 标准插头（固定接口）
+
+```cpp
+// 所有插件共享的元数据
+struct PluginInfo {
+    const char* name;        // "my_material"
+    const char* version;     // "1.0"
+    const char* role;        // "material" / "boundary" / "source" / "interaction" / "field"
+};
+
+// 角色接口（用户只实现其中之一或组合）
+class IPlugin {
+public:
+    virtual PluginInfo info() const = 0;
+    virtual ~IPlugin() = default;
+};
+
+class IMaterialModel : public IPlugin {   // 新材料：物性/演化/响应
+public:
+    virtual void properties (Level&, const MaterialState&) = 0;
+    virtual void advance    (MaterialState&, const FieldView&, Real dt) = 0;
+    virtual void respond    (const FieldView&, FieldSource&, Real dt) = 0;
+};
+
+class IBoundary : public IPlugin {        // 新边界
+public:
+    virtual void apply (FieldState&) = 0;
+};
+
+class ISource : public IPlugin {          // 新源项
+public:
+    virtual void apply (State&, Real dt) = 0;
+};
+
+class IInteraction : public IPlugin {     // 新相互作用（场+力）
+public:
+    virtual void deposit (const PlasmaState&, FieldSource&) = 0;
+    virtual void gather  (PlasmaState&, const FieldState&, Real dt) = 0;
+    virtual FieldEquationId field_equation() const = 0;
+};
+```
+
+### 16.3 模块的写法（用户侧，零内核改动）
+
+```cpp
+// my_material.cpp  —— 用户只写这一个文件
+#include "Plugin/Plugin.H"
+
+class MyMaterial : public moments::IMaterialModel {
+public:
+    PluginInfo info() const override { return {"my_material", "1.0", "material"}; }
+    void properties(Level& lv, const MaterialState& ms) override { /* fill eps/sigma */ }
+    void advance(MaterialState& ms, const FieldView& fv, Real dt) override { /* phase/T */ }
+    void respond(const FieldView& fv, FieldSource& fs, Real dt) override { /* sigma E */ }
+};
+
+// 静态注册（编译期）：
+MOMENTS_REGISTER_PLUGIN(MyMaterial)
+// 或导出 C ABI（运行期 dlopen）：
+extern "C" void register_plugin(PluginHost& host) {
+    host.add(std::make_unique<MyMaterial>());
+}
+```
+
+### 16.4 加载与注册（编译期 / 运行期）
+
+| 方式 | 做法 | 适用 |
+|---|---|---|
+| **编译期（静态注册）** | 模块 `.cpp` 里的静态构造器把工厂注册到全局表；链接时 `--whole-archive` 防裁剪 | 默认；最简单；无 ABI 问题 |
+| **运行期（动态加载）** | 模块编成 `.so`；`dlopen` + `register_plugin(PluginHost&)`；版本/ABI 检查 | 需要“不重新编译就换模块”时 |
+| **输入选择** | `plugins = my_material`（编译期）或 `plugins = ./libmy_material.so`（运行期） | 内核只做名字→模块映射 |
+
+### 16.5 内核侧的改动（尽量少）
+
+```
+1. 新增 Source/Plugin/（PluginHost + 接口 + 注册宏 + dlopen）
+2. InitData：加载/注册（读 plugins=）
+3. 调用点（每个角色一个，默认 no-op）：
+   - step 前/后：IInteraction/ISource
+   - 边界：IBoundary
+   - 材料：IMaterialModel
+   - 场方程：IFieldEquation（若插件提供）
+4. 旧路径默认不变（插件表为空 → 内核行为逐位/数值不变）
+```
+
+**除了 PluginHost 与这几个调用点，旧源码不改**；新能力全部在 `Module/` 里。
+
+### 16.6 四个示例（全部外挂，零内核改动）
+
+```
+新能力：MyInteraction.cpp      —— deposit/gather + field_equation()
+新边界：MyBoundary.cpp         —— apply(FieldState&)
+新源项：MySource.cpp           —— apply(State&, dt)
+新材料：MyMaterial.cpp         —— properties/advance/respond
+```
+
+每个模块 = 1 个 `.cpp`（+ 可选 `.H`）+ 注册宏/导出函数；内核只加一次 `plugins = my_...`。
+
+### 16.7 测试与兼容
+
+```
+- 内核旧路径：插件表为空时，P0/E3/S5/E6/L4/L5/L6 逐位/数值不变
+- 插件契约测试：每个角色一个 mock + 一个真实模块
+- 运行期：ABI/version 检查；加载失败回退到“无插件”
+```
+
+### 16.8 决策点（留给负责人）
+
+| # | 决策 | 选项 |
+|---|---|---|
+| 1 | 加载方式 | 编译期静态 / 运行期 dlopen / 两者 |
+| 2 | 接口 ABI | C++ 抽象类 / C ABI（`extern "C"`） |
+| 3 | 内核调用点 | 只在 init/step / 也含 boundary/material/field |
+| 4 | 插件粒度 | 每角色一个接口 / 一个通用 `IPlugin` + 能力查询 |
+| 5 | 版本策略 | `PluginInfo.version` 严格匹配 / 兼容范围 |
+| 6 | 性能 | 每步一次虚调用 / 每 cell 的 kernel launcher |
+| 7 | 旧码预算 | 只加 PluginHost + 调用点 / 允许更多 |
+
+### 16.9 一句话
+
+**插件化架构 = 稳定内核（旧 WarpX，尽量不动）+ 唯一新增的 PluginHost + 固定角色接口（插头）+ 外挂模块（用户只写 1 个 .cpp + 注册）+ 编译期静态注册或运行期 dlopen；新能力/新边界/新源项/新材料全部在模块里，内核只在 init/step/boundary/material/field 留 no-op 调用点；插件表为空时旧路径逐位/数值不变。**

@@ -13,6 +13,7 @@
 #define WARPX_H_
 
 #include "BoundaryConditions/PEC_Insulator_fwd.H"
+#include "Fluids/MomentFluidSolver.H"
 #include "BoundaryConditions/PML_fwd.H"
 #include "Diagnostics/MultiDiagnostics_fwd.H"
 #include "Diagnostics/ReducedDiags/MultiReducedDiags_fwd.H"
@@ -1485,6 +1486,8 @@ private:
 
     // Macroscopic properties
     std::unique_ptr<MacroscopicProperties> m_macroscopic_properties;
+    /** Optional 5-moment fluid current source (fluids.moment.enabled = 1). */
+    std::unique_ptr<MomentFluidSolver> m_moment_fluid;
 
     // Electrostatic solver
     std::unique_ptr<ElectrostaticSolver> m_electrostatic_solver;

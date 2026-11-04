@@ -596,6 +596,21 @@ WarpX::OneStep_nosub (
     if (current_deposition_algo != CurrentDepositionAlgo::Vay) {
         FinalizeJ(); // Apply boundary conditions and inverse volume scaling to J
     }
+    // Optional 5-moment fluid: add its charge-conserving current to the same
+    // Yee faces that EvolveE reads.  The fluid current is built from the mass
+    // flux that updated its density, so (rho^{n+1}-rho^n)/dt + div J = 0 holds
+    // algebraically and the discrete Gauss law is preserved by construction.
+    using warpx::fields::FieldType;
+    if (MomentFluidSolver::IsEnabled() && m_fields.has_vector(FieldType::current_fp, 0)) {
+        if (m_moment_fluid == nullptr) {
+            m_moment_fluid = std::make_unique<MomentFluidSolver>();
+        }
+        amrex::MultiFab* moment_J[3] = {
+            m_fields.get(FieldType::current_fp, ablastr::fields::Direction{0}, 0),
+            m_fields.get(FieldType::current_fp, ablastr::fields::Direction{1}, 0),
+            m_fields.get(FieldType::current_fp, ablastr::fields::Direction{2}, 0)};
+        m_moment_fluid->AdvanceAndDeposit(dt[0], moment_J, Geom(0), 0);
+    }
 
     // At this point, J is up-to-date inside the domain except with Vay deposition,
     // and E and B are up-to-date including enough guard cells for the first
