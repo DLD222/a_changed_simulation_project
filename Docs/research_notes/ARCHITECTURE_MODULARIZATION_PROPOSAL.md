@@ -496,3 +496,78 @@ material.models = ...
 ## 13. 一句话（修正版）
 
 **通用角色 + 插件注册 + typed/命名状态 + 契约测试的方向成立；但“DAG 调度”“interaction 自带 solve”“材料三合一”“1–2 个 .cpp 且不碰核心”“任意组合自动正确”这几条需要修正为：循环依赖用 split/IMEX 显式处理、interaction 只做源/力并引用场方程、材料拆成物性/过程/响应、核心文件之外有胶水、组合必须配守恒审计与受限模板。**
+
+---
+
+## 14. 审阅结论的采纳（对 `ARCHITECTURE_REVIEW.md`）
+
+> 审阅文档：`Docs/research_notes/ARCHITECTURE_REVIEW.md`（提交 `aef3175`）。
+> 以下三条**全部采纳**；§5.4/§6/§5.2 的相关表述以本节为准。
+
+### 14.1 三处修正
+
+1. **typed registry 不是必经之路（采纳）**
+   - 事实：`ablastr::fields::MultiFabRegister` 已经是**字符串键**的注册表；新状态今天就能注册，`FieldType` 只是已知字段的便捷枚举。
+   - 修正：**保留 `FieldType` + 复用字符串注册表**；不新造 typed registry；等出现“同名冲突/拼写错误”的真实痛点再考虑。
+   - 影响：§5.4 / §12.5 的“typed key”从“必经”降为“可选、后置”。
+
+2. **“P0 逐位不变”做不到（采纳）**
+   - 事实：`EvolveB` 的 `SubcyclingHalf::FirstHalf` 半格、PSATD 的 Vay J 与 rho 半格对齐、适配器改变 `fillBoundary` 时机会改变浮点。
+   - 修正：P0 的验收改为**数值门（相对误差 ≤1e-12）+ 少数简单路径逐位**；基线用 `P0 0.0927/0.8906`、`S5 0.619830`、`E6 0.100042`。
+   - 影响：§6 P0、§12.9 的“逐位优先”改为“数值门为准，逐位为锦上添花”。
+
+3. **接口粒度与 GPU 形状（采纳并补形状）**
+   - 事实：`solve(FieldState&, dt)` 是宿主侧抽象；插件上 GPU 需要 `Array4`；且未体现 E/B 分开推进 + 半格交错。
+   - 修正（补进设计）：
+
+```cpp
+struct FieldView { amrex::Array4<amrex::Real> a; amrex::Box bx; int ncomp; };
+
+class IFieldEquation {
+public:
+    virtual void advance(FieldState&, const FieldSource&, Real dt, TimeLayer layer) = 0;
+    // layer ∈ {Full, FirstHalf, SecondHalf}
+    virtual void boundary(FieldState&) = 0;
+    virtual ~IFieldEquation() = default;
+};
+// 插件实现：template<class Impl> launch(FieldView, ...)（内联、无虚函数）
+// 虚函数只在“选择 launcher”这一层（每步一次）
+```
+
+   - 影响：§5.2 的 `solve` 改为 `advance(..., TimeLayer)`；§12.8 的 launcher 补上 `FieldView` 形状。
+
+### 14.2 采纳的 MVP 路线（medium 单块，2–3 周）
+
+```
+只做 medium 块接口化：
+  IMediumProperty  —— 给场求解器 fill ε/σ/μ（适配现有 MacroscopicProperties）
+  IMediumSource    —— 给源算 ρ_medium / σE（适配现有 ⟨J_c⟩ 路径）
+  回归门：L0–L6（P0/S5/E6 基线；数值门 ≤1e-12）
+不动 FieldType / Evolve / 场求解器（适配器 + 双写）
+等第二个真实需求（μ 张量 / 第三材料）再决定是否推广
+```
+
+理由（采纳审阅意见）：
+
+- 唯一“有真实用例、有现成回归、不阻塞主线”的切片；
+- 验证 §12.1(3) 材料三分法是否够用——medium 的真实结构正是 `ε/σ` 给场、`ρ_medium` 给源、界面给 BC；
+- 成本 2–3 周，远低于全量 12–21 人月。
+
+### 14.3 对 §10 决策清单的采纳值
+
+| # | 决策点 | 采纳 |
+|---|---|---|
+| 1 | 状态注册表 | 保留 `FieldType` + 复用字符串注册表（不新造 typed registry） |
+| 2 | 多态方式 | 静态多态优先；虚函数只在 launcher 选择层 |
+| 3 | 统一等离子体块 | 分块但共享接口（不先合并） |
+| 4 | 调度模型 | 固定顺序 + 显式 split 阶段（不用 DAG） |
+| 5 | 组合自由度 | 受限组合 + 参考模板 |
+| 6 | 迁移范围 | 只新物理走新接口（medium MVP） |
+| 7 | 1D/3D | 先 1D，后 3D |
+| 8 | 旧路径淘汰 | 第二个真实需求出现后再议 |
+| 9 | 性能预算 | 先基准，后定上限 |
+| 10 | 契约测试 | 每插件 + 每角色抽样 |
+
+### 14.4 一句话（采纳审阅后）
+
+**方向成立，但全量 P0–P5 不划算；采纳审阅：保留字符串注册表、P0 用数值门而非逐位、接口补 `TimeLayer` + `FieldView` 形状；先做 medium 单块 MVP（`IMediumProperty` + `IMediumSource`，2–3 周，L0–L6 回归），不动核心，等第二个真实需求再推广。**
